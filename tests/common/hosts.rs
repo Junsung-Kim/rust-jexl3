@@ -43,11 +43,63 @@ impl HostObject for Ns {
     }
 }
 
-/// A bean with properties and methods.
-#[derive(Debug)]
+/// A bean with properties and methods: getName/setName, getValue/setValue, isFlag/setFlag and a
+/// getItems() that hands back the same List every time, like the Java Hosts$Bean it stands for.
 pub struct Bean {
-    pub name: String,
-    pub value: i32,
+    name: std::sync::Mutex<String>,
+    value: std::sync::Mutex<i32>,
+    flag: std::sync::Mutex<bool>,
+    items: rust_jexl::value::JList,
+}
+
+impl Bean {
+    pub fn new(name: &str, value: i32) -> Bean {
+        Bean {
+            name: std::sync::Mutex::new(name.to_string()),
+            value: std::sync::Mutex::new(value),
+            flag: std::sync::Mutex::new(false),
+            items: rust_jexl::value::JList::array_list(Vec::new()),
+        }
+    }
+    pub fn name(&self) -> String {
+        self.name.lock().unwrap_or_else(|p| p.into_inner()).clone()
+    }
+    pub fn value(&self) -> i32 {
+        *self.value.lock().unwrap_or_else(|p| p.into_inner())
+    }
+    /// The Java bean properties, by the name the introspector derives from the accessor.
+    fn get(&self, property: &str) -> Option<Value> {
+        match property {
+            "name" => Some(Value::string(&self.name())),
+            "value" => Some(Value::Integer(self.value())),
+            "flag" => Some(Value::Boolean(*self.flag.lock().unwrap_or_else(|p| p.into_inner()))),
+            "items" => Some(Value::List(self.items.clone())),
+            _ => None,
+        }
+    }
+    /// Returns None when there is no such setter; Err when Java's would not accept the argument.
+    fn set(&self, property: &str, arg: &Value) -> Option<Result<(), JexlException>> {
+        match (property, arg) {
+            ("name", Value::String(s)) => {
+                *self.name.lock().unwrap_or_else(|p| p.into_inner()) = s.to_rust();
+                Some(Ok(()))
+            }
+            ("name", Value::Null) => {
+                *self.name.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+                Some(Ok(()))
+            }
+            ("value", Value::Integer(i)) => {
+                *self.value.lock().unwrap_or_else(|p| p.into_inner()) = *i;
+                Some(Ok(()))
+            }
+            ("flag", Value::Boolean(b)) => {
+                *self.flag.lock().unwrap_or_else(|p| p.into_inner()) = *b;
+                Some(Ok(()))
+            }
+            ("name" | "value" | "flag", _) => None,
+            _ => None,
+        }
+    }
 }
 
 impl HostObject for Bean {
@@ -55,7 +107,7 @@ impl HostObject for Bean {
         "rustjexl.oracle.Hosts$Bean".into()
     }
     fn java_to_string(&self) -> Option<String> {
-        Some(format!("Bean({},{})", self.name, self.value))
+        Some(format!("Bean({},{})", self.name(), self.value()))
     }
     fn as_any(&self) -> &dyn Any {
         self
@@ -66,7 +118,7 @@ pub fn create(name: &str) -> Value {
     match name {
         "jsonNull" => Value::object(JsonNull),
         "ns" => Value::object(Ns),
-        "bean" => Value::object(Bean { name: "bean".into(), value: 0 }),
+        "bean" => Value::object(Bean::new("bean", 0)),
         other => panic!("unknown host {}", other),
     }
 }
@@ -184,18 +236,18 @@ impl HostIntrospector for TestHosts {
                     ret: "java.lang.String",
                     call: |o, a| {
                         let b = o.as_host::<Bean>().expect("bean");
-                        Ok(Value::string(&format!("hello {} from {}", a[0].java_to_string(), b.name)))
+                        Ok(Value::string(&format!("hello {} from {}", a[0].java_to_string(), b.name())))
                     },
                 },
                 ("twice", 1) => HostMethod {
                     ret: "int", call: |_, a| to_int(&a[0]).map(|i| Value::Integer(i.wrapping_mul(2))) },
                 ("getName", 0) => HostMethod {
                     ret: "java.lang.String",
-                    call: |o, _| Ok(Value::string(&o.as_host::<Bean>().expect("bean").name)),
+                    call: |o, _| Ok(Value::string(&o.as_host::<Bean>().expect("bean").name())),
                 },
                 ("getValue", 0) => HostMethod {
                     ret: "int",
-                    call: |o, _| Ok(Value::Integer(o.as_host::<Bean>().expect("bean").value)),
+                    call: |o, _| Ok(Value::Integer(o.as_host::<Bean>().expect("bean").value())),
                 },
                 _ => return None,
             };
@@ -205,17 +257,49 @@ impl HostIntrospector for TestHosts {
     }
 
     fn get_property_get(&self, obj: &Value, identifier: &Value) -> Option<Arc<dyn JexlPropertyGet>> {
-        let _ = (obj, identifier);
-        None
+        let bean = obj.as_host::<Bean>()?;
+        let property = identifier.java_to_string();
+        bean.get(&property)?;
+        Some(Arc::new(BeanGet { property }))
     }
 
     fn get_property_set(&self, obj: &Value, identifier: &Value, arg: &Value) -> Option<Arc<dyn JexlPropertySet>> {
-        let _ = (obj, identifier, arg);
-        None
+        let bean = obj.as_host::<Bean>()?;
+        let property = identifier.java_to_string();
+        bean.set(&property, arg)?;
+        Some(Arc::new(BeanSet { property }))
     }
 
     fn get_constructor(&self, handle: &Value, args: &[Value]) -> Option<Arc<dyn JexlMethod>> {
         let _ = (handle, args);
         None
+    }
+}
+
+/// port of: the PropertyGet a Java introspector builds for a bean accessor
+struct BeanGet {
+    property: String,
+}
+
+impl JexlPropertyGet for BeanGet {
+    fn invoke(&self, obj: &Value) -> Result<Value, JexlException> {
+        match obj.as_host::<Bean>().and_then(|b| b.get(&self.property)) {
+            Some(v) => Ok(v),
+            None => Err(JexlException::java("java.lang.IllegalArgumentException", Some(self.property.clone()))),
+        }
+    }
+}
+
+struct BeanSet {
+    property: String,
+}
+
+impl JexlPropertySet for BeanSet {
+    fn invoke(&self, obj: &Value, arg: &Value) -> Result<Value, JexlException> {
+        match obj.as_host::<Bean>().and_then(|b| b.set(&self.property, arg)) {
+            Some(Ok(())) => Ok(arg.clone()),
+            Some(Err(e)) => Err(e),
+            None => Err(JexlException::java("java.lang.IllegalArgumentException", Some(self.property.clone()))),
+        }
     }
 }
