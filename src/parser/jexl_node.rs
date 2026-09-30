@@ -97,6 +97,10 @@ impl Ast {
     pub fn scope(&self, id: ScopeId) -> &Scope {
         self.scopes.get(id)
     }
+
+    pub fn scopes_ref(&self) -> &Scopes {
+        &self.scopes
+    }
 }
 
 /// The result of a parse: the tree and its root (ASTJexlScript, or the lone lambda `script()`

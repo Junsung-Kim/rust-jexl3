@@ -643,6 +643,29 @@ impl Value {
 }
 
 /// Float.floatToRawIntBits: the exact bit pattern (NaN sign and payload preserved)
+/// java.util.regex.Pattern as a JEXL value (a regex literal evaluates to one).
+pub struct PatternValue(pub Arc<crate::java::regex::Pattern>);
+
+impl HostObject for PatternValue {
+    fn class_name(&self) -> String {
+        "java.util.regex.Pattern".into()
+    }
+    // port of: Pattern.toString — the pattern source
+    fn java_to_string(&self) -> Option<String> {
+        Some(self.0.pattern().to_string())
+    }
+    // java.util.regex.Pattern does not override equals: identity
+    fn java_equals(&self, other: &Value) -> Option<bool> {
+        Some(match other {
+            Value::Object(o) => std::sync::Arc::as_ptr(o) as *const () == self as *const _ as *const (),
+            _ => false,
+        })
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 pub fn float_raw_bits(f: f32) -> u32 {
     f.to_bits()
 }

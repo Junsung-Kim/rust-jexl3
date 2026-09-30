@@ -64,6 +64,19 @@ impl From<number::NumberFormatException> for ArithError {
 
 type R<T> = Result<T, ArithError>;
 
+/// `NumberFormatException` whose message quotes the *original* Java String, not a lossy copy.
+fn nfe_units(e: number::NumberFormatException, s: &JString) -> ArithError {
+    const PREFIX: &str = "For input string: \"";
+    if let Some(rest) = e.0.strip_prefix(PREFIX) {
+        if let Some(close) = rest.rfind('"') {
+            return ArithError::NumberFormat(
+                JStringBuilder::new().str(PREFIX).jstr(s).str("\"").str(&rest[close + 1..]).build(),
+            );
+        }
+    }
+    ArithError::NumberFormat(JString::from(e.0))
+}
+
 /// The JDK's helpful NullPointerException for `object.getClass()` inside isEmpty/size.
 fn npe_get_class() -> ArithError {
     ArithError::NullPointer(JString::from("Cannot invoke \"Object.getClass()\" because \"object\" is null"))
@@ -948,7 +961,7 @@ impl JexlArithmetic {
                 if s.is_empty() {
                     return Ok(0);
                 }
-                Ok(number::parse_int(&s.to_rust(), 10)?)
+                number::parse_int(&s.to_rust(), 10).map_err(|e| nfe_units(e, s))
             }
             Value::Boolean(b) => Ok(if *b { 1 } else { 0 }),
             Value::AtomicBoolean(b) => Ok(if b.load(std::sync::atomic::Ordering::SeqCst) { 1 } else { 0 }),
@@ -984,7 +997,7 @@ impl JexlArithmetic {
                 if s.is_empty() {
                     return Ok(0);
                 }
-                Ok(number::parse_long(&s.to_rust(), 10)?)
+                number::parse_long(&s.to_rust(), 10).map_err(|e| nfe_units(e, s))
             }
             Value::Boolean(b) => Ok(if *b { 1 } else { 0 }),
             Value::AtomicBoolean(b) => Ok(if b.load(std::sync::atomic::Ordering::SeqCst) { 1 } else { 0 }),
@@ -1023,7 +1036,7 @@ impl JexlArithmetic {
                 if s.is_empty() {
                     return Ok(BigInt::from(0));
                 }
-                Ok(number::parse_big_integer(&s.to_rust(), 10)?)
+                number::parse_big_integer(&s.to_rust(), 10).map_err(|e| nfe_units(e, s))
             }
             Value::Character(c) => Ok(BigInt::from(*c as i32)),
             other => Err(ArithError::Arithmetic(
@@ -1095,7 +1108,7 @@ impl JexlArithmetic {
                 if s.is_empty() {
                     return Ok(f64::NAN);
                 }
-                Ok(number::parse_double(&s.to_rust())?)
+                number::parse_double(&s.to_rust()).map_err(|e| nfe_units(e, s))
             }
             Value::Character(c) => Ok(*c as i32 as f64),
             other => Err(ArithError::Arithmetic(

@@ -31,6 +31,8 @@ public class RegexGen {
     public static void main(String[] args) throws Exception {
         File dir = new File(args[0]);
         dir.mkdirs();
+        // Optional second argument scales the random campaigns up for a local soak run.
+        int scale = args.length > 1 ? Integer.parseInt(args[1]) : 1;
         List<Integer> flagSets = flagSets();
         List<String> patterns = patterns();
         List<String> inputs = inputs();
@@ -40,7 +42,7 @@ public class RegexGen {
             for (String p : patterns)
                 for (int f : flagSets)
                     compileCase(w, p, f);
-            for (int i = 0; i < 20000; i++)
+            for (int i = 0; i < 20000 * scale; i++)
                 compileCase(w, fuzzPattern(r), r.nextInt(4) == 0 ? randFlags(r) : 0);
         }
         try (PrintWriter w = writer(new File(dir, "ops.txt"))) {
@@ -58,7 +60,7 @@ public class RegexGen {
                                 pickRepl(r));
                 }
             }
-            for (int i = 0; i < 6000; i++)
+            for (int i = 0; i < 6000 * scale; i++)
                 opsCase(w, fuzzPattern(r), r.nextInt(4) == 0 ? randFlags(r) : 0,
                         inputs.get(r.nextInt(inputs.size())), pickRepl(r));
         }
@@ -66,7 +68,7 @@ public class RegexGen {
             Random r = new Random(SEED + 2);
             for (String re : strRegexes())
                 for (String in : inputs) strCase(w, in, re, pickRepl(r));
-            for (int i = 0; i < 4000; i++)
+            for (int i = 0; i < 4000 * scale; i++)
                 strCase(w, inputs.get(r.nextInt(inputs.size())), fuzzPattern(r), pickRepl(r));
         }
         try (PrintWriter w = writer(new File(dir, "props.txt"))) {
@@ -290,7 +292,22 @@ public class RegexGen {
             "^(\\d{1,3}\\.){3}\\d{1,3}$", "\\bfoo\\b", "(\\w+)@(\\w+)",
             "(?<user>\\w+)@(?<host>[\\w.]+)", "a(?=b)", "a(?!b)", "(?<=a)b", "(?<!a)b",
             "한국어+", "[가-힣]+", "😀+", "[\\p{IsHangul}]+",
-            "^\\s*$", "\\p{Punct}+", "(a|b)*abb"
+            "^\\s*$", "\\p{Punct}+", "(a|b)*abb",
+            // --- coverage of rarely-taken branches in the port
+            "a\\p{L}", "a\\X", "a\\b{g}", "\\b{gx}", "\\b{", "a\\d", "a\\1", "(a)a\\1",
+            "[\\p{Cs}]", "[^\\p{Cs}]", "[\\p{Cs}&&[a]]", "\\p{Cs}", "\\P{Cs}", "[a&&\\p{Cs}]",
+            "\\uD800", "[\\uD800-\\uDFFF]", "[\\uDC00]", "\\uD83D", "\\uD83Dx", "\\uD83D\\u0041",
+            "(?x)a#c", "(?x)a # comment", "(?x)[a#b]", "(?x) a b # tail",
+            "[a-z&&[b][c]]", "[a-z&&[b]c]", "[a&&b[c]]", "[a&&[b]&&[c]]",
+            "[a[b&&c]]", "[[a&&b]c]", "[x[a-z&&[^m-p]]]", "[[a-z&&[^aeiou]][0-9]]",
+            "[^[a-z&&[^m]]x]", "[[a&&b]&&[c&&d]]",
+            "(?u)a", "(?c)a", "(?U)a", "(?-u)a", "(?-c)a", "(?-x)a", "(?-U)a", "(?-m)a",
+            "(?-s)a", "(?-d)a", "(?idmsux)a", "(?idmsuxU-idmsuxU:a)", "(?-q)a",
+            "(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)(l)",
+            "[\u00E9]", "[\u00DF]", "[\u0130]", "[\u212A]", "[\u017F]", "[\u00B5]",
+            "[\u00FF]", "[\u00C5]", "[\u0100-\u0200]", "\u00E9", "\u00DF", "\u212A",
+            "\u0130", "\u017F", "[\u00E9-\u00FF]",
+            "\u00DFx", "x\u00DF", "\u00DF\u00DF", "\u1E9Ex", "x\u0130", "\u0130x"
         ));
     }
 
@@ -319,7 +336,9 @@ public class RegexGen {
             "😀", "😀😁", "a😀b",
             "user@example.com", "ABC-1234", "192.168.0.1", "foo bar foo", "file.txt",
             "éÉ", "İı", "ſ", "K", "straße",
-            "0x1F", "  trim  ", "$1", "a$b", "\\", "a\\b", "hello world", "HELLO WORLD"
+            "0x1F", "  trim  ", "$1", "a$b", "\\", "a\\b", "hello world", "HELLO WORLD",
+            "\u00E9", "\u00C9", "abcdefghijkl", "a\u0301", "\u1E9E", "\u00B5\u039C",
+            "\u1E9Ex", "x\u1E9E", "\u00DFx", "\u1E9E\u1E9E", "x\u0130", "i\u0307x"
         );
     }
 

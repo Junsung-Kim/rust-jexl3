@@ -11,6 +11,7 @@ use rust_jexl::value::{Component, JArray, JList, JMap, JSet, ListKind, MapKind, 
 
 use super::json::Json;
 
+
 fn text(spec: &Json) -> String {
     spec.get("v").and_then(Json::string).unwrap_or_default()
 }
@@ -95,6 +96,7 @@ pub fn decode(spec: &Json) -> Value {
             };
             Value::Array(JArray::new(component, items))
         }
+        "Host" => super::hosts::create(&text(spec)),
         other => panic!("unknown type {}", other),
     }
 }

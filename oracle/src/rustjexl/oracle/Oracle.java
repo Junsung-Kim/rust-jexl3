@@ -246,6 +246,10 @@ public final class Oracle {
                     }
                     break;
                 }
+                case "spi": {
+                    r.put("result", spi(kase));
+                    break;
+                }
                 case "arith": {
                     r.put("result", arith(kase));
                     break;
@@ -528,6 +532,47 @@ public final class Oracle {
         for (Object o : l) enc.add(encode(o));
         m.put("v", enc);
         return m;
+    }
+
+    // ---------------------------------------------------------------- uberspect / JDK shim probes
+
+    @SuppressWarnings("unchecked")
+    static Object spi(Map<String, Object> kase) {
+        JexlEngine jexl = engine((Map<String, Object>) kase.get("engine"));
+        String op = (String) kase.get("op");
+        Object target = kase.containsKey("target") ? decode(kase.get("target")) : null;
+        Object[] args = args((List<Object>) kase.get("args"));
+        try {
+            switch (op) {
+                case "invoke":
+                    return encode(jexl.invokeMethod(target, (String) kase.get("name"), args));
+                case "get":
+                    return encode(jexl.getProperty(target, (String) kase.get("name")));
+                case "set": {
+                    jexl.setProperty(target, (String) kase.get("name"), args[0]);
+                    return encode(target);
+                }
+                case "iterate": {
+                    Iterator<?> it = jexl.getUberspect().getIterator(target);
+                    if (it == null) return encode(null);
+                    List<Object> out = new ArrayList<>();
+                    int n = 0;
+                    while (it.hasNext() && n++ < 64) out.add(encode(it.next()));
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("t", "Iterated");
+                    m.put("v", out);
+                    return m;
+                }
+                case "construct":
+                    return encode(jexl.newInstance((String) kase.get("name"), args));
+                default:
+                    throw new IllegalArgumentException("unknown spi op " + op);
+            }
+        } catch (RuntimeException xany) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("throw", error(xany));
+            return m;
+        }
     }
 
     static List<Object> strings(String[] s) {

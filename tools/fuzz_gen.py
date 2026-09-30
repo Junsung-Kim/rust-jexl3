@@ -258,6 +258,40 @@ FEATURE_FLAGS = ["register", "localVar", "sideEffect", "sideEffectGlobal", "arra
                  "lambda", "methodCall", "structuredLiteral", "pragma", "annotation", "lexical", "lexicalShade"]
 
 
+# Typed values for execution contexts (same encoding as tools/gen_arith_cases.py).
+CTX_VALUES = [
+    {"t": "null"}, {"t": "Boolean", "v": "true"}, {"t": "Boolean", "v": "false"},
+    {"t": "Integer", "v": "0"}, {"t": "Integer", "v": "1"}, {"t": "Integer", "v": "2"},
+    {"t": "Integer", "v": "-1"}, {"t": "Integer", "v": "2147483647"},
+    {"t": "Long", "v": "9223372036854775807"}, {"t": "Long", "v": "3"},
+    {"t": "Double", "v": "1.5"}, {"t": "Double", "v": "NaN"}, {"t": "Double", "v": "0.0"},
+    {"t": "Float", "v": "2.5"}, {"t": "BigInteger", "v": "123456789012345678901234567890"},
+    {"t": "BigDecimal", "v": "1.25"}, {"t": "Character", "v": "a"},
+    {"t": "String", "v": ""}, {"t": "String", "v": "abc"}, {"t": "String", "v": "1"},
+    {"t": "String", "v": "10"}, {"t": "String", "v": "true"}, {"t": "String", "v": "한글"},
+    {"t": "String", "v": "\ud83d\ude00"}, {"t": "String", "v": "별+"},
+    {"t": "List", "c": "java.util.ArrayList", "v": [{"t": "Integer", "v": "1"}, {"t": "String", "v": "a"}]},
+    {"t": "List", "c": "java.util.ArrayList", "v": []},
+    {"t": "Set", "c": "java.util.LinkedHashSet", "v": [{"t": "Integer", "v": "1"}]},
+    {"t": "Map", "c": "java.util.LinkedHashMap", "v": [[{"t": "String", "v": "b"}, {"t": "Integer", "v": "7"}]]},
+    {"t": "Map", "c": "java.util.LinkedHashMap", "v": []},
+    {"t": "Array", "c": "Object", "v": [{"t": "Integer", "v": "1"}, {"t": "Integer", "v": "2"}]},
+    {"t": "Array", "c": "int", "v": [{"t": "Integer", "v": "5"}]},
+    {"t": "Host", "v": "jsonNull"}, {"t": "Host", "v": "bean"},
+]
+
+CTX_NAMES = IDENTS + PARAMS + ["a.b", "b.c", "x.value", "input.size", "obj.name", "A.b", "ConnectFlow.step"]
+
+
+def context(r):
+    """A MapContext binding: each name is bound with probability 0.6."""
+    ctx = {}
+    for name in CTX_NAMES:
+        if r.random() < 0.6:
+            ctx[name] = r.choice(CTX_VALUES)
+    return ctx
+
+
 def engine_conf(r):
     conf = {}
     if r.random() < 0.7:
@@ -324,9 +358,15 @@ def main():
             case["params"] = r.sample(PARAMS + IDENTS[:3], r.randint(1, 2))
         if ops == "ast":
             case["ops"] = ["ast", "vars", "params", "locals", "pragmas"]
+        elif ops == "parsed":
+            case["ops"] = ["parsed"]
         else:
-            case["ops"] = ["vars", "parsed", "exec", "ctx"]
-        print(json.dumps(case, ensure_ascii=False))
+            case["ops"] = ["vars", "exec", "ctx"]
+            case["ctx"] = context(r)
+            if case.get("params"):
+                case["args"] = [r.choice(CTX_VALUES) for _ in case["params"]]
+        # ensure_ascii keeps lone surrogates representable, like the Java oracle writer
+        print(json.dumps(case))
 
 
 if __name__ == "__main__":

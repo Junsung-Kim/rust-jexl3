@@ -11,18 +11,9 @@ use rust_jexl::java::big_decimal::MathContext;
 use rust_jexl::value::Value;
 
 fn math_context(spec: Option<&Json>) -> MathContext {
-    match spec.and_then(Json::string).as_deref() {
-        None | Some("DECIMAL128") => MathContext::DECIMAL128,
-        Some("DECIMAL32") => MathContext::DECIMAL32,
-        Some("DECIMAL64") => MathContext::DECIMAL64,
-        Some("UNLIMITED") => MathContext::UNLIMITED,
-        Some(other) => {
-            let (p, r) = other.split_once(':').expect("precision:ROUNDING");
-            MathContext {
-                precision: p.parse().expect("precision"),
-                rounding_mode: rust_jexl::java::big_decimal::RoundingMode::value_of(r).expect("rounding"),
-            }
-        }
+    match spec.and_then(Json::string) {
+        None => MathContext::DECIMAL128,
+        Some(s) => common::math_context(&s),
     }
 }
 
@@ -105,37 +96,6 @@ fn run(a: &JexlArithmetic, op: &str, args: &[Value]) -> Result<Json, ArithError>
     Ok(encode(&v))
 }
 
-/// Masks Java identity hashes so only their presence, not their value, is compared.
-fn normalize(v: &Json) -> Json {
-    match v {
-        Json::Str(s) => {
-            let text = String::from_utf16_lossy(s);
-            if !text.contains('@') {
-                return v.clone();
-            }
-            let mut out = String::new();
-            let mut it = text.chars().peekable();
-            while let Some(c) = it.next() {
-                out.push(c);
-                if c == '@' {
-                    let mut n = 0;
-                    while it.peek().map(|c| c.is_ascii_hexdigit()).unwrap_or(false) {
-                        it.next();
-                        n += 1;
-                    }
-                    if n > 0 {
-                        out.push_str("ID");
-                    }
-                }
-            }
-            Json::str(&out)
-        }
-        Json::Arr(a) => Json::Arr(a.iter().map(normalize).collect()),
-        Json::Obj(kv) => Json::Obj(kv.iter().map(|(k, x)| (k.clone(), normalize(x))).collect()),
-        other => other.clone(),
-    }
-}
-
 #[test]
 fn arithmetic_matches_oracle() {
     let cp = std::env::var("ARITH_CASES").unwrap_or_else(|_| "tests/data/arith/cases.jsonl".into());
@@ -173,8 +133,8 @@ fn arithmetic_matches_oracle() {
             )]),
         };
         // Identity hashes (`ClassName@1a2b3c`) are nondeterministic in Java: compare their shape.
-        let want = normalize(&want);
-        let got = normalize(&got);
+        let want = common::normalize(&want);
+        let got = common::normalize(&got);
         if got != want {
             if let Ok(path) = std::env::var("ARITH_DUMP") {
                 use std::io::Write;

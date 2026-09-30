@@ -11,8 +11,23 @@
 //! case-insensitivity, POSIX classes, Unicode blocks) is baked into the emitted text, so no
 //! fancy-regex flag is ever relied on.
 //!
-//! Known divergences are collected in `UNSUPPORTED_*` below; each one surfaces as a
-//! `PatternSyntaxException` whose description starts with `Unsupported`.
+//! Divergences from the JVM, each pinned by a test in `tests/java_regex.rs`:
+//!
+//! * `\X`, `\b{g}`, `\N{name}`, `\p{javaMirrored}` and `CANON_EQ` are refused with a
+//!   `PatternSyntaxException` whose description starts with `Unsupported` (the JVM compiles
+//!   them).  Same for a look-behind fancy-regex cannot size, and for patterns nested past
+//!   `MAX_DEPTH`.
+//! * Where the JVM itself refuses a look-behind ("Look-behind group does not have an obvious
+//!   maximum length") this port reports a different description and index: that diagnostic
+//!   comes from the JDK's `TreeInfo` study pass over a node tree this port never builds.
+//! * Java indexes by UTF-16 code unit, so its `Matcher` can stop *inside* a surrogate pair
+//!   after a zero-width match and split a supplementary character in half.  Rust strings
+//!   cannot hold the halves; this port steps a whole code point.
+//! * `\b` looks back over at most `MARK_RUN` non-spacing marks for a base character; the
+//!   JVM scans an unbounded run.
+//! * `\G` binds to the previous match end as in Java, but `Matcher.region`, transparent and
+//!   non-anchoring bounds are not modelled (JEXL never sets them).
+//! * Catastrophic backtracking is cut off at `BACKTRACK_LIMIT` and reported as "no match".
 
 use fancy_regex::Regex;
 use std::fmt;
@@ -68,8 +83,10 @@ impl PatternSyntaxException {
         let u16_len: usize = self.pattern.chars().map(char::len_utf16).sum();
         if self.index >= 0 && (self.index as usize) < u16_len {
             s.push('\n');
+            // Java keeps tabs so the caret lines up in a tab-rendered terminal.
+            let mut units = self.pattern.encode_utf16();
             for _ in 0..self.index {
-                s.push(' ');
+                s.push(if units.next() == Some(0x09) { '\t' } else { ' ' });
             }
             s.push('^');
         }
@@ -126,10 +143,14 @@ type PResult<T> = Result<T, PatternSyntaxException>;
 /// negation translate to regex-syntax's own set operators.
 #[derive(Clone, Debug)]
 enum Cc {
-    /// Explicit code point ranges (already case-closed where Java would be).
+    /// Explicit code point ranges.  Case folding is applied when the set is built, so this
+    /// is always the final set.
     Set(Vec<(u32, u32)>),
     /// A ready-made fancy-regex class body, e.g. `\p{L}\p{Nd}`.
     Body(String),
+    /// The JDK's shared `BitClass`: members below U+0100 accumulate into one set per
+    /// `clazz()` call, and `prev`/`curr` may alias it, so later members are still visible.
+    Bits(std::rc::Rc<std::cell::RefCell<Vec<(u32, u32)>>>),
     Union(Box<Cc>, Box<Cc>),
     And(Box<Cc>, Box<Cc>),
     Neg(Box<Cc>),
@@ -138,6 +159,9 @@ enum Cc {
 impl Cc {
     fn set(ranges: &[(u32, u32)]) -> Cc {
         Cc::Set(ranges.to_vec())
+    }
+    fn owned(ranges: Vec<(u32, u32)>) -> Cc {
+        Cc::Set(ranges)
     }
     fn body(s: &str) -> Cc {
         Cc::Body(s.to_string())
@@ -175,13 +199,16 @@ impl Cc {
                     Some(out)
                 }
             }
+            Cc::Bits(b) => Cc::Set(b.borrow().clone()).body_text(),
             Cc::Body(s) => Some(s.clone()),
             Cc::Union(a, b) => match (a.body_text(), b.body_text()) {
                 (None, x) | (x, None) => x,
                 (Some(x), Some(y)) => Some(format!("{x}{y}")),
             },
+            // Bracketed so that an intersection nested inside a union keeps its scope:
+            // `[a[b&&c]]` must stay {a} u ({b} n {c}), not ({a,b} n {c}).
             Cc::And(a, b) => match (a.body_text(), b.body_text()) {
-                (Some(x), Some(y)) => Some(format!("[{x}]&&[{y}]")),
+                (Some(x), Some(y)) => Some(format!("[[{x}]&&[{y}]]")),
                 _ => None,
             },
             Cc::Neg(a) => match a.body_text() {
@@ -191,12 +218,11 @@ impl Cc {
         }
     }
 
-    /// Renders this predicate as a standalone node.
-    fn node(&self, ci_unicode: bool) -> String {
+    /// Renders this predicate as a standalone node matching exactly one code point.
+    fn node(&self) -> String {
         match self.body_text() {
             // A class that can never match: a negative look-ahead on the empty string.
             None => "(?!)".to_string(),
-            Some(b) if ci_unicode => format!("(?i:[{b}])"),
             Some(b) => format!("[{b}]"),
         }
     }
@@ -234,6 +260,194 @@ fn ascii_lower(cp: u32) -> u32 {
 
 fn ascii_upper(cp: u32) -> u32 {
     if (b'a' as u32..=b'z' as u32).contains(&cp) { cp - 32 } else { cp }
+}
+
+/// `Character.toUpperCase`/`toLowerCase` use the UCD *simple* case mappings; Rust's
+/// `char::to_uppercase`/`to_lowercase` use the *full* ones.  Where a full mapping is
+/// several code points this port falls back to the identity, which matches the JDK
+/// everywhere except these (cp, simple upper, simple lower) triples - mostly the
+/// polytonic Greek iota-subscript block plus LATIN CAPITAL LETTER I WITH DOT ABOVE.
+/// Generated from Corretto 25 (tools/javagen, CaseGen + casediff).
+#[rustfmt::skip]
+const CASE_EXCEPTIONS: &[(u32, u32, u32)] = &[
+    (0x0130, 0x0130, 0x0069),
+    (0x1F80, 0x1F88, 0x1F80),
+    (0x1F81, 0x1F89, 0x1F81),
+    (0x1F82, 0x1F8A, 0x1F82),
+    (0x1F83, 0x1F8B, 0x1F83),
+    (0x1F84, 0x1F8C, 0x1F84),
+    (0x1F85, 0x1F8D, 0x1F85),
+    (0x1F86, 0x1F8E, 0x1F86),
+    (0x1F87, 0x1F8F, 0x1F87),
+    (0x1F90, 0x1F98, 0x1F90),
+    (0x1F91, 0x1F99, 0x1F91),
+    (0x1F92, 0x1F9A, 0x1F92),
+    (0x1F93, 0x1F9B, 0x1F93),
+    (0x1F94, 0x1F9C, 0x1F94),
+    (0x1F95, 0x1F9D, 0x1F95),
+    (0x1F96, 0x1F9E, 0x1F96),
+    (0x1F97, 0x1F9F, 0x1F97),
+    (0x1FA0, 0x1FA8, 0x1FA0),
+    (0x1FA1, 0x1FA9, 0x1FA1),
+    (0x1FA2, 0x1FAA, 0x1FA2),
+    (0x1FA3, 0x1FAB, 0x1FA3),
+    (0x1FA4, 0x1FAC, 0x1FA4),
+    (0x1FA5, 0x1FAD, 0x1FA5),
+    (0x1FA6, 0x1FAE, 0x1FA6),
+    (0x1FA7, 0x1FAF, 0x1FA7),
+    (0x1FB3, 0x1FBC, 0x1FB3),
+    (0x1FC3, 0x1FCC, 0x1FC3),
+    (0x1FF3, 0x1FFC, 0x1FF3),
+    (0xA7CE, 0xA7CE, 0xA7CE),
+    (0xA7CF, 0xA7CF, 0xA7CF),
+    (0xA7D2, 0xA7D2, 0xA7D2),
+    (0xA7D3, 0xA7D3, 0xA7D3),
+    (0xA7D4, 0xA7D4, 0xA7D4),
+    (0xA7D5, 0xA7D5, 0xA7D5),
+    (0x16EA0, 0x16EA0, 0x16EA0),
+    (0x16EA1, 0x16EA1, 0x16EA1),
+    (0x16EA2, 0x16EA2, 0x16EA2),
+    (0x16EA3, 0x16EA3, 0x16EA3),
+    (0x16EA4, 0x16EA4, 0x16EA4),
+    (0x16EA5, 0x16EA5, 0x16EA5),
+    (0x16EA6, 0x16EA6, 0x16EA6),
+    (0x16EA7, 0x16EA7, 0x16EA7),
+    (0x16EA8, 0x16EA8, 0x16EA8),
+    (0x16EA9, 0x16EA9, 0x16EA9),
+    (0x16EAA, 0x16EAA, 0x16EAA),
+    (0x16EAB, 0x16EAB, 0x16EAB),
+    (0x16EAC, 0x16EAC, 0x16EAC),
+    (0x16EAD, 0x16EAD, 0x16EAD),
+    (0x16EAE, 0x16EAE, 0x16EAE),
+    (0x16EAF, 0x16EAF, 0x16EAF),
+    (0x16EB0, 0x16EB0, 0x16EB0),
+    (0x16EB1, 0x16EB1, 0x16EB1),
+    (0x16EB2, 0x16EB2, 0x16EB2),
+    (0x16EB3, 0x16EB3, 0x16EB3),
+    (0x16EB4, 0x16EB4, 0x16EB4),
+    (0x16EB5, 0x16EB5, 0x16EB5),
+    (0x16EB6, 0x16EB6, 0x16EB6),
+    (0x16EB7, 0x16EB7, 0x16EB7),
+    (0x16EB8, 0x16EB8, 0x16EB8),
+    (0x16EBB, 0x16EBB, 0x16EBB),
+    (0x16EBC, 0x16EBC, 0x16EBC),
+    (0x16EBD, 0x16EBD, 0x16EBD),
+    (0x16EBE, 0x16EBE, 0x16EBE),
+    (0x16EBF, 0x16EBF, 0x16EBF),
+    (0x16EC0, 0x16EC0, 0x16EC0),
+    (0x16EC1, 0x16EC1, 0x16EC1),
+    (0x16EC2, 0x16EC2, 0x16EC2),
+    (0x16EC3, 0x16EC3, 0x16EC3),
+    (0x16EC4, 0x16EC4, 0x16EC4),
+    (0x16EC5, 0x16EC5, 0x16EC5),
+    (0x16EC6, 0x16EC6, 0x16EC6),
+    (0x16EC7, 0x16EC7, 0x16EC7),
+    (0x16EC8, 0x16EC8, 0x16EC8),
+    (0x16EC9, 0x16EC9, 0x16EC9),
+    (0x16ECA, 0x16ECA, 0x16ECA),
+    (0x16ECB, 0x16ECB, 0x16ECB),
+    (0x16ECC, 0x16ECC, 0x16ECC),
+    (0x16ECD, 0x16ECD, 0x16ECD),
+    (0x16ECE, 0x16ECE, 0x16ECE),
+    (0x16ECF, 0x16ECF, 0x16ECF),
+    (0x16ED0, 0x16ED0, 0x16ED0),
+    (0x16ED1, 0x16ED1, 0x16ED1),
+    (0x16ED2, 0x16ED2, 0x16ED2),
+    (0x16ED3, 0x16ED3, 0x16ED3),
+];
+
+fn case_exception(cp: u32) -> Option<(u32, u32)> {{
+    CASE_EXCEPTIONS
+        .binary_search_by_key(&cp, |&(c, _, _)| c)
+        .ok()
+        .map(|i| (CASE_EXCEPTIONS[i].1, CASE_EXCEPTIONS[i].2))
+}}
+
+/// `Character.toUpperCase(int)`: the single-code-point uppercase mapping, or the character
+/// itself when the full mapping is not one code point (e.g. the German sharp s).
+fn single_upper(cp: u32) -> u32 {
+    if let Some((up, _)) = case_exception(cp) {
+        return up;
+    }
+    match char::from_u32(cp) {
+        None => cp,
+        Some(c) => {
+            let mut it = c.to_uppercase();
+            match (it.next(), it.next()) {
+                (Some(u), None) => u as u32,
+                _ => cp,
+            }
+        }
+    }
+}
+
+/// `Character.toLowerCase(int)`, same single-code-point rule.
+fn single_lower(cp: u32) -> u32 {
+    if let Some((_, lo)) = case_exception(cp) {
+        return lo;
+    }
+    match char::from_u32(cp) {
+        None => cp,
+        Some(c) => {
+            let mut it = c.to_lowercase();
+            match (it.next(), it.next()) {
+                (Some(l), None) => l as u32,
+                _ => cp,
+            }
+        }
+    }
+}
+
+/// `toLowerCase(toUpperCase(ch))`, the key `SingleU`/`SliceU` uses.
+fn fold_u(cp: u32) -> u32 {
+    single_lower(single_upper(cp))
+}
+
+/// Every code point whose `toUpperCase`/`toLowerCase(toUpperCase(...))` is not itself.
+/// Java's `CIRangeU`/`SingleU` are defined by those two mappings, so this small table is
+/// enough to invert them without scanning all of Unicode per pattern.
+fn case_mapped() -> &'static [(u32, u32, u32)] {
+    static TABLE: std::sync::OnceLock<Vec<(u32, u32, u32)>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut v = Vec::new();
+        for cp in 0..0x11_0000u32 {
+            if char::from_u32(cp).is_none() {
+                continue;
+            }
+            let up = single_upper(cp);
+            let lo = single_lower(up);
+            if up != cp || lo != cp {
+                v.push((cp, up, lo));
+            }
+        }
+        v
+    })
+}
+
+/// `Pattern.CIRangeU`: ch, toUpperCase(ch) or toLowerCase(toUpperCase(ch)) inside the range.
+fn unicode_ci_range(lo: u32, hi: u32) -> Vec<(u32, u32)> {
+    let mut v = vec![(lo, hi)];
+    for &(cp, up, folded) in case_mapped() {
+        if (lo..=hi).contains(&up) || (lo..=hi).contains(&folded) {
+            v.push((cp, cp));
+        }
+    }
+    v
+}
+
+/// `Pattern.SingleU(lower)`: every ch with `toLowerCase(toUpperCase(ch)) == lower`.
+fn unicode_ci_single(cp: u32) -> Vec<(u32, u32)> {
+    let folded = fold_u(cp);
+    if single_upper(cp) == folded {
+        return vec![(cp, cp)]; // Java falls back to an exact Single here
+    }
+    let mut v = vec![(folded, folded)];
+    for &(c, _, f) in case_mapped() {
+        if f == folded && c != folded {
+            v.push((c, c));
+        }
+    }
+    v
 }
 
 /// Java's `CIRange`: the range, plus its ASCII case-swapped image.
@@ -503,9 +717,11 @@ fn for_property(name: &str, ci: bool) -> Option<Cc> {
             "\\p{L}\\p{Nl}\\p{Sc}\\p{Pc}\\p{Mn}\\p{Mc}\\p{Nd}\\p{Cf}\
              \\x{0}-\\x{8}\\x{E}-\\x{1B}\\x{7F}-\\x{9F}",
         ),
-        "javaUnicodeIdentifierStart" => Cc::body("\\p{ID_Start}"),
+        // U+2E2F is Other_ID_Start in the JDK's tables but excluded from regex-syntax's
+        // derived ID_Start (it is also Pattern_Syntax); the JVM fixture pins the difference.
+        "javaUnicodeIdentifierStart" => Cc::body("\\p{ID_Start}\\x{2E2F}"),
         "javaUnicodeIdentifierPart" => Cc::body(
-            "\\p{ID_Continue}\\p{Cf}\\x{0}-\\x{8}\\x{E}-\\x{1B}\\x{7F}-\\x{9F}",
+            "\\p{ID_Continue}\\p{Cf}\\x{2E2F}\\x{0}-\\x{8}\\x{E}-\\x{1B}\\x{7F}-\\x{9F}",
         ),
         "javaIdentifierIgnorable" => {
             Cc::body("\\p{Cf}\\x{0}-\\x{8}\\x{E}-\\x{1B}\\x{7F}-\\x{9F}")
@@ -539,11 +755,20 @@ struct Parser<'a> {
     capturing_group_count: usize,
     named_groups: Vec<(String, usize)>,
     depth: u32,
-    /// Set by `u()`, whose JDK counterpart throws from a value-returning position.
-    pending_error: Option<PatternSyntaxException>,
+    /// Second-pass flag: wrap quantified nodes so that fancy-regex accepts a quantifier on
+    /// an assertion (which the JDK allows but fancy-regex rejects as "target of repeat
+    /// operator is invalid").  `\b\B` can never match, so the alternative is inert.
+    safe_quant: bool,
 }
 
 const MAX_DEPTH: u32 = 200;
+
+/// `Character.isLetterOrDigit`, the base a non-spacing mark must follow to count as a word
+/// character in `\b`; `MARK` is `Character.NON_SPACING_MARK`.
+const BASE_CHAR: &str = "\\p{L}\\p{Nd}";
+const MARK: &str = "\\p{Mn}";
+/// Longest run of non-spacing marks `\b` looks back over.
+const MARK_RUN: usize = 8;
 
 impl<'a> Parser<'a> {
     fn has(&self, f: i32) -> bool {
@@ -674,34 +899,71 @@ impl<'a> Parser<'a> {
 
     // ------------------------------------------------------------- emission helpers
 
-    /// `Pattern.single()` - a literal code point under the current case flags.
-    fn emit_single(&self, cp: u32) -> String {
+    /// A literal code point under the current case flags; `slice` selects the `newSlice`
+    /// predicate rather than the `single` one.
+    fn emit_literal(&self, cp: u32, slice: bool) -> String {
         if char::from_u32(cp).is_none() {
             return "(?!)".to_string(); // an unpaired surrogate can never occur in a Rust str
         }
-        if self.has(CASE_INSENSITIVE) {
-            if self.has(UNICODE_CASE) {
-                return format!("(?i:{})", lit(cp));
-            } else if cp < 128 {
-                let (lo, up) = (ascii_lower(cp), ascii_upper(cp));
-                if lo != up {
-                    return format!("[{}{}]", lit(lo), lit(up));
-                }
-            }
+        let set = if slice { self.slice_set(cp) } else { self.single_set(cp) };
+        if set.len() == 1 && set[0].0 == set[0].1 && set[0].0 == cp {
+            return lit(cp);
         }
-        lit(cp)
+        Cc::Set(set).node()
     }
 
-    fn emit_class(&self, cc: &Cc) -> String {
-        cc.node(self.has(CASE_INSENSITIVE) && self.has(UNICODE_CASE))
+    /// Wraps a node so a quantifier binds to all of it.
+    fn wrap(&self, node: &str) -> String {
+        let node = if node == LINE_ENDING { LINE_ENDING_ATOMIC } else { node };
+        if self.safe_quant {
+            format!("(?:{node}|\\b\\B)")
+        } else {
+            format!("(?:{node})")
+        }
     }
 
-    /// The word-character set backing `\b` / `\B`.
+    /// The word-character set backing `\b` / `\B`.  JDK 9+ uses `ASCII_WORD` here unless
+    /// UNICODE_CHARACTER_CLASS is set - note that this differs from `\w` only in the
+    /// Unicode case.
     fn word_body(&self) -> String {
         if self.has(UNICODE_CHARACTER_CLASS) {
             p_word().body_text().unwrap_or_default()
         } else {
-            "\\p{L}\\p{Nd}_".to_string()
+            "0-9A-Za-z_".to_string()
+        }
+    }
+
+    /// One side of `Pattern.Bound.check`: a word character, or a non-spacing mark whose
+    /// base character (found by scanning back over marks) is a letter or digit.
+    /// `MARK_RUN` bounds that scan, because fancy-regex needs each look-behind to have a
+    /// fixed width; runs longer than this are a pinned divergence.
+    fn bound_left(&self) -> String {
+        let w = self.word_body();
+        let mut s = format!("(?:(?<=[{w}])");
+        for k in 1..=MARK_RUN {
+            s.push_str(&format!("|(?<=[{BASE_CHAR}]{MARK}{{{k}}})"));
+        }
+        s.push(')');
+        s
+    }
+
+    fn bound_right(&self) -> String {
+        let w = self.word_body();
+        let mut s = format!("(?:(?=[{w}])|(?={MARK})(?:(?<=[{BASE_CHAR}])");
+        for k in 1..=MARK_RUN {
+            s.push_str(&format!("|(?<=[{BASE_CHAR}]{MARK}{{{k}}})"));
+        }
+        s.push_str("))");
+        s
+    }
+
+    /// `\b` (boundary) and `\B` (no boundary): the two sides must differ, or agree.
+    fn bound(&self, boundary: bool) -> String {
+        let (l, r) = (self.bound_left(), self.bound_right());
+        if boundary {
+            format!("(?:{l}(?!{r})|(?!{l}){r})")
+        } else {
+            format!("(?:{l}{r}|(?!{l})(?!{r}))")
         }
     }
 
@@ -768,7 +1030,7 @@ impl<'a> Parser<'a> {
                 }
                 x if x == '[' as u32 => {
                     let cc = self.clazz(true)?;
-                    self.emit_class(&cc)
+                    cc.node()
                 }
                 x if x == '\\' as u32 => {
                     let c2 = self.next_escaped();
@@ -781,7 +1043,7 @@ impl<'a> Parser<'a> {
                             one_letter = false;
                         }
                         let cc = self.family(one_letter, comp)?;
-                        self.emit_class(&cc)
+                        cc.node()
                     } else {
                         self.unread();
                         self.atom()?
@@ -858,7 +1120,7 @@ impl<'a> Parser<'a> {
                                 one_letter = false;
                             }
                             let cc = self.family(one_letter, comp)?;
-                            return Ok(self.emit_class(&cc));
+                            return Ok(cc.node());
                         }
                     } else {
                         self.unread();
@@ -894,7 +1156,8 @@ impl<'a> Parser<'a> {
             }
             break;
         }
-        Ok(buffer.iter().map(|&c| self.emit_single(c)).collect())
+        let slice = buffer.len() > 1;
+        Ok(buffer.iter().map(|&c| self.emit_literal(c, slice)).collect())
     }
 
     /// `Pattern.ref()` - a greedy back reference.
@@ -940,7 +1203,7 @@ impl<'a> Parser<'a> {
                 return Ok(if inclass {
                     Esc::Class(cc)
                 } else {
-                    Esc::Node(self.emit_class(&cc))
+                    Esc::Node(cc.node())
                 });
             }};
         }
@@ -965,8 +1228,7 @@ impl<'a> Parser<'a> {
                     if !create {
                         return Ok(Esc::Nothing);
                     }
-                    let w = self.word_body();
-                    return Ok(Esc::Node(format!("(?:(?<![{w}])(?![{w}])|(?<=[{w}])(?=[{w}]))")));
+                    return Ok(Esc::Node(self.bound(false)));
                 }
             }
             'C' => {}
@@ -986,10 +1248,8 @@ impl<'a> Parser<'a> {
                     if !create {
                         return Ok(Esc::Nothing);
                     }
-                    return Ok(Esc::Node(
-                        "(?:(?>\\x{D}\\x{A}?)|[\\x{A}\\x{B}\\x{C}\\x{85}\\x{2028}\\x{2029}])"
-                            .into(),
-                    ));
+                    // LineEnding prefers CRLF but falls back to a bare CR on failure.
+                    return Ok(Esc::Node(LINE_ENDING.to_string()));
                 }
             }
             'S' => pred!(self.space_class().negate()),
@@ -1030,10 +1290,7 @@ impl<'a> Parser<'a> {
                         self.unread();
                         self.unread();
                     }
-                    let w = self.word_body();
-                    return Ok(Esc::Node(format!(
-                        "(?:(?<![{w}])(?=[{w}])|(?<=[{w}])(?![{w}]))"
-                    )));
+                    return Ok(Esc::Node(self.bound(true)));
                 }
             }
             'c' => return Ok(Esc::Ch(self.control()?)),
@@ -1070,7 +1327,7 @@ impl<'a> Parser<'a> {
             'r' => return Ok(Esc::Ch(0x0D)),
             's' => pred!(self.space_class()),
             't' => return Ok(Esc::Ch(0x09)),
-            'u' => return Ok(Esc::Ch(self.unicode_escape())),
+            'u' => return Ok(Esc::Ch(self.unicode_escape()?)),
             'v' => {
                 if isrange {
                     return Ok(Esc::Ch(0x0B));
@@ -1128,6 +1385,8 @@ impl<'a> Parser<'a> {
     fn clazz_inner(&mut self, consume: bool) -> PResult<Cc> {
         let mut prev: Option<Cc> = None;
         let mut curr: Option<Cc> = None;
+        let bits = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut has_bits = false;
         let mut is_neg = false;
         let mut ch = self.next();
 
@@ -1167,6 +1426,18 @@ impl<'a> Parser<'a> {
                         }
                         ch = self.peek();
                     }
+                    if has_bits {
+                        // bits used, union has high precedence
+                        let b = Cc::Bits(bits.clone());
+                        prev = Some(match prev.take() {
+                            None => {
+                                curr = Some(b.clone());
+                                b
+                            }
+                            Some(p) => p.union(b),
+                        });
+                        has_bits = false;
+                    }
                     if let Some(r) = right.clone() {
                         curr = Some(r);
                     }
@@ -1189,24 +1460,36 @@ impl<'a> Parser<'a> {
                 if self.cursor >= self.pattern_length {
                     return self.error("Unclosed character class");
                 }
-            } else if ch == ']' as u32 && prev.is_some() {
+            } else if ch == ']' as u32 && (prev.is_some() || has_bits) {
                 if consume {
                     self.next();
                 }
-                let p = prev.take().unwrap();
+                let p = match prev.take() {
+                    None => Cc::Bits(bits),
+                    Some(p) if has_bits => p.union(Cc::Bits(bits)),
+                    Some(p) => p,
+                };
                 return Ok(if is_neg { p.negate() } else { p });
             }
-            let c = self.range()?;
-            prev = Some(match prev {
-                None => c.clone(),
-                Some(p) => p.union(c.clone()),
-            });
-            curr = Some(c);
+            match self.range(&bits)? {
+                None => {
+                    has_bits = true;
+                    curr = None;
+                }
+                Some(c) => {
+                    prev = Some(match prev {
+                        None => c.clone(),
+                        Some(p) => p.union(c.clone()),
+                    });
+                    curr = Some(c);
+                }
+            }
             ch = self.peek();
         }
     }
 
-    fn range(&mut self) -> PResult<Cc> {
+    fn range(&mut self, bits: &std::rc::Rc<std::cell::RefCell<Vec<(u32, u32)>>>)
+        -> PResult<Option<Cc>> {
         let mut ch = self.peek();
         if ch == '\\' as u32 {
             ch = self.next_escaped();
@@ -1218,12 +1501,12 @@ impl<'a> Parser<'a> {
                 } else {
                     one_letter = false;
                 }
-                return self.family(one_letter, comp);
+                return self.family(one_letter, comp).map(Some);
             }
             let isrange = self.tget(self.cursor + 1) == '-' as u32;
             self.unread();
             match self.escape(true, true, isrange)? {
-                Esc::Class(cc) => return Ok(cc),
+                Esc::Class(cc) => return Ok(Some(cc)),
                 Esc::Ch(c) => ch = c,
                 _ => return self.error("Illegal character range"),
             }
@@ -1233,7 +1516,7 @@ impl<'a> Parser<'a> {
         if self.peek() == '-' as u32 {
             let end_range = self.tget(self.cursor + 1);
             if end_range == '[' as u32 {
-                return Ok(self.single_class(ch));
+                return Ok(self.bits_or_single(ch, bits));
             }
             if end_range != ']' as u32 {
                 self.next();
@@ -1250,25 +1533,79 @@ impl<'a> Parser<'a> {
                 if m < ch {
                     return self.error("Illegal character range");
                 }
-                return Ok(if self.has(CASE_INSENSITIVE) && !self.has(UNICODE_CASE) {
-                    Cc::Set(ascii_ci_ranges(ch, m))
+                return Ok(Some(Cc::owned(if !self.has(CASE_INSENSITIVE) {
+                    vec![(ch, m)]
+                } else if self.has(UNICODE_CASE) {
+                    unicode_ci_range(ch, m)
                 } else {
-                    Cc::set(&[(ch, m)])
-                });
+                    ascii_ci_ranges(ch, m)
+                })));
             }
         }
-        Ok(self.single_class(ch))
+        Ok(self.bits_or_single(ch, bits))
     }
 
-    /// `bitsOrSingle`/`single` for a class member.
-    fn single_class(&self, cp: u32) -> Cc {
-        if self.has(CASE_INSENSITIVE) && !self.has(UNICODE_CASE) && cp < 128 {
-            let (lo, up) = (ascii_lower(cp), ascii_upper(cp));
-            if lo != up {
-                return Cc::set(&[(lo, lo), (up, up)]);
+    /// `Pattern.bitsOrSingle` + `Pattern.single` for one class member.  Members below
+    /// U+0100 go through the JDK's `BitClass`, which only adds the direct case mappings;
+    /// the listed exceptions (and everything above U+00FF) get the full `SingleU` set.
+    fn bits_or_single(
+        &self,
+        cp: u32,
+        bits: &std::rc::Rc<std::cell::RefCell<Vec<(u32, u32)>>>,
+    ) -> Option<Cc> {
+        const BITS_EXCEPTIONS: &[u32] =
+            &[0xFF, 0xB5, 0x49, 0x69, 0x53, 0x73, 0x4B, 0x6B, 0xC5, 0xE5];
+        let ci = self.has(CASE_INSENSITIVE);
+        let uc = self.has(UNICODE_CASE);
+        if cp < 256 && !(ci && uc && BITS_EXCEPTIONS.contains(&cp)) {
+            let mut b = bits.borrow_mut();
+            if ci {
+                if cp < 128 {
+                    b.push((ascii_lower(cp), ascii_lower(cp)));
+                    b.push((ascii_upper(cp), ascii_upper(cp)));
+                } else if uc {
+                    b.push((single_lower(cp), single_lower(cp)));
+                    b.push((single_upper(cp), single_upper(cp)));
+                }
+            }
+            b.push((cp, cp));
+            return None;
+        }
+        Some(Cc::owned(self.single_set(cp)))
+    }
+
+    /// `Pattern.newSlice()` as a code point set for one member.  A run of two or more
+    /// literals (and anything under LITERAL) becomes a `SliceU` under UNICODE_CASE, which
+    /// compares `toLowerCase(toUpperCase(ch))` and so is *wider* than the `Single` a lone
+    /// character gets: measured on Corretto 25, `ss` does not match `SS` but `ssx` matches
+    /// `SSx` (with the sharp-s characters U+00DF / U+1E9E).
+    fn slice_set(&self, cp: u32) -> Vec<(u32, u32)> {
+        if self.has(CASE_INSENSITIVE) && self.has(UNICODE_CASE) {
+            let folded = fold_u(cp);
+            let mut v = vec![(folded, folded)];
+            for &(c, _, f) in case_mapped() {
+                if f == folded && c != folded {
+                    v.push((c, c));
+                }
+            }
+            return v;
+        }
+        self.single_set(cp)
+    }
+
+    /// `Pattern.single()` as a code point set.
+    fn single_set(&self, cp: u32) -> Vec<(u32, u32)> {
+        if self.has(CASE_INSENSITIVE) {
+            if self.has(UNICODE_CASE) {
+                return unicode_ci_single(cp);
+            } else if cp < 128 {
+                let (lo, up) = (ascii_lower(cp), ascii_upper(cp));
+                if lo != up {
+                    return vec![(lo, lo), (up, up)];
+                }
             }
         }
-        Cc::set(&[(cp, cp)])
+        vec![(cp, cp)]
     }
 
     fn family(&mut self, single_letter: bool, is_complement: bool) -> PResult<Cc> {
@@ -1386,7 +1723,7 @@ impl<'a> Parser<'a> {
                 ':' => head = format!("(?:{})", self.expr()?),
                 '=' | '!' => {
                     let body = self.expr()?;
-                    head = format!("(?{}{})", if c == '=' { '=' } else { '!' }, wrap(&body));
+                    head = format!("(?{}(?:{}))", if c == '=' { '=' } else { '!' }, body);
                 }
                 '>' => head = format!("(?>{})", self.expr()?),
                 '<' => {
@@ -1504,7 +1841,7 @@ impl<'a> Parser<'a> {
         match c {
             '?' | '*' | '+' => {
                 let q = self.qtype();
-                Ok(format!("{}{c}{q}", wrap(&prev)))
+                Ok(format!("{}{c}{q}", self.wrap(&prev)))
             }
             '{' => {
                 let mut ch = self.skip();
@@ -1556,12 +1893,13 @@ impl<'a> Parser<'a> {
                     self.unread();
                 }
                 let q = self.qtype();
+                let w = self.wrap(&prev);
                 Ok(if open_ended {
-                    format!("{}{{{cmin},}}{q}", wrap(&prev))
+                    format!("{w}{{{cmin},}}{q}")
                 } else if cmin == cmax {
-                    format!("{}{{{cmin}}}{q}", wrap(&prev))
+                    format!("{w}{{{cmin}}}{q}")
                 } else {
-                    format!("{}{{{cmin},{cmax}}}{q}", wrap(&prev))
+                    format!("{w}{{{cmin},{cmax}}}{q}")
                 })
             }
             _ => Ok(prev),
@@ -1632,26 +1970,15 @@ impl<'a> Parser<'a> {
         Ok(n)
     }
 
-    /// `Pattern.u()`; errors are raised eagerly like the JDK's.
-    fn unicode_escape(&mut self) -> u32 {
-        match self.u_inner() {
-            Ok(v) => v,
-            Err(e) => {
-                self.pending_error = Some(e);
-                0
-            }
-        }
-    }
-
-    fn u_inner(&mut self) -> PResult<u32> {
+    /// `Pattern.u()` - a `\\uXXXX` escape, joining a surrogate pair when one follows.
+    fn unicode_escape(&mut self) -> PResult<u32> {
         let n = self.uxxxx()?;
         if (0xD800..=0xDBFF).contains(&n) {
             let cur = self.cursor;
             if self.read() == '\\' as u32 && self.read() == 'u' as u32 {
-                if let Ok(n2) = self.uxxxx() {
-                    if (0xDC00..=0xDFFF).contains(&n2) {
-                        return Ok(0x10000 + ((n - 0xD800) << 10) + (n2 - 0xDC00));
-                    }
+                let n2 = self.uxxxx()?;
+                if (0xDC00..=0xDFFF).contains(&n2) {
+                    return Ok(0x10000 + ((n - 0xD800) << 10) + (n2 - 0xDC00));
                 }
             }
             self.cursor = cur;
@@ -1671,6 +1998,13 @@ impl<'a> Parser<'a> {
         self.error("Illegal character name escape sequence")
     }
 }
+
+/// `\R` as a chained node: CRLF is preferred but a bare CR is retried on failure.
+const LINE_ENDING: &str = "(?:\\x{D}\\x{A}|[\\x{A}\\x{B}\\x{C}\\x{D}\\x{85}\\x{2028}\\x{2029}])";
+/// `\R` under a quantifier: the JDK's `Curly` runs the atom against a bare accept node, so
+/// the CRLF branch can never be retried as a lone CR between iterations.
+const LINE_ENDING_ATOMIC: &str =
+    "(?:(?>\\x{D}\\x{A})|[\\x{A}\\x{B}\\x{C}\\x{D}\\x{85}\\x{2028}\\x{2029}])";
 
 const UNSUPPORTED_GRAPHEME: &str = "Unsupported: grapheme cluster matching (\\X, \\b{g})";
 const UNSUPPORTED_CHAR_NAME: &str = "Unsupported: \\N{name} needs the Unicode name table";
@@ -1720,28 +2054,24 @@ fn vert_ws() -> Cc {
     Cc::set(&[(0x0A, 0x0D), (0x85, 0x85), (0x2028, 0x2029)])
 }
 
-/// Wraps a node so a quantifier binds to all of it (and so fancy-regex accepts quantified
-/// assertions, which Java allows).
-fn wrap(node: &str) -> String {
-    format!("(?:{node})")
-}
+
 
 /// Splits an emitted alternation at its top level (parenthesis- and class-aware).
 fn split_alternation(body: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut depth = 0i32;
-    let mut in_class = false;
+    let mut in_class = 0i32; // classes nest: `[[a]&&[b]]`
     let mut start = 0usize;
     let b = body.as_bytes();
     let mut i = 0usize;
     while i < b.len() {
         match b[i] {
             b'\\' => i += 1,
-            b'[' if !in_class => in_class = true,
-            b']' if in_class => in_class = false,
-            b'(' if !in_class => depth += 1,
-            b')' if !in_class => depth -= 1,
-            b'|' if !in_class && depth == 0 => {
+            b'[' => in_class += 1,
+            b']' if in_class > 0 => in_class -= 1,
+            b'(' if in_class == 0 => depth += 1,
+            b')' if in_class == 0 => depth -= 1,
+            b'|' if in_class == 0 && depth == 0 => {
                 out.push(body[start..i].to_string());
                 start = i + 1;
             }
@@ -1762,6 +2092,10 @@ pub struct Pattern {
     translated: String,
     re: Regex,
     re_full: Regex,
+    /// `\G` variant: after an empty match Java's `find()` searches from `last + 1` while
+    /// `\G` still anchors at `last`, so no `\G`-anchored alternative can match.  This is
+    /// the same regex with every `\G` turned into a never-matching assertion.
+    re_after_empty: Option<Regex>,
     group_count: usize,
     named_groups: Vec<(String, usize)>,
 }
@@ -1789,25 +2123,48 @@ impl Pattern {
     }
 
     pub fn compile_flags(regex: &str, flags: i32) -> PResult<Pattern> {
+        // `new Pattern(String,int)`: UNICODE_CHARACTER_CLASS implies UNICODE_CASE, and
+        // `flags()` reports the adjusted value.
+        let flags = if flags & UNICODE_CHARACTER_CLASS != 0 { flags | UNICODE_CASE } else { flags };
         if flags & CANON_EQ != 0 && flags & LITERAL == 0 {
             return Err(PatternSyntaxException::new(UNSUPPORTED_CANON_EQ, regex, -1));
         }
-        let translated = translate(regex, flags)?;
-        let build = |src: &str| {
-            fancy_regex::RegexBuilder::new(src).backtrack_limit(BACKTRACK_LIMIT).build()
+        let mut translated = translate(regex, flags, false)?;
+        let build = |src: &str| -> Result<Regex, String> {
+            fancy_regex::RegexBuilder::new(src)
+                .backtrack_limit(BACKTRACK_LIMIT)
+                .build()
+                .map_err(|e| e.to_string())
         };
-        let re = build(&translated.text).map_err(|e| {
+        let mut built = build(&translated.text);
+        if let Err(e) = &built {
+            // The JDK lets a quantifier follow a zero-width assertion; fancy-regex does not,
+            // so re-translate with an inert alternative inside every quantified group.
+            if e.contains("Target of repeat operator is invalid") {
+                translated = translate(regex, flags, true)?;
+                built = build(&translated.text);
+            }
+        }
+        let re = built.map_err(|e| {
             PatternSyntaxException::new(format!("Unsupported by fancy-regex: {e}"), regex, -1)
         })?;
         let re_full = build(&format!("\\A(?:{})\\z", translated.text)).map_err(|e| {
             PatternSyntaxException::new(format!("Unsupported by fancy-regex: {e}"), regex, -1)
         })?;
+        let re_after_empty = if translated.text.contains("\\G") {
+            Some(build(&translated.text.replace("\\G", "(?!)")).map_err(|e| {
+                PatternSyntaxException::new(format!("Unsupported by fancy-regex: {e}"), regex, -1)
+            })?)
+        } else {
+            None
+        };
         Ok(Pattern {
             src: regex.to_string(),
             flags,
             translated: translated.text,
             re,
             re_full,
+            re_after_empty,
             group_count: translated.group_count,
             named_groups: translated.named_groups,
         })
@@ -1839,10 +2196,19 @@ impl Pattern {
     /// The successive `Matcher.find()` positions, with Java's "advance one character past an
     /// empty match" rule.
     fn find_all(&self, input: &str) -> Vec<Vec<Option<(usize, usize)>>> {
+        self.find_upto(input, usize::MAX)
+    }
+
+    fn find_upto(&self, input: &str, max: usize) -> Vec<Vec<Option<(usize, usize)>>> {
         let mut out = Vec::new();
         let mut pos = 0usize;
+        let mut after_empty = false;
         loop {
-            let caps = match self.re.captures_from_pos(input, pos) {
+            let re = match (after_empty, &self.re_after_empty) {
+                (true, Some(r)) => r,
+                _ => &self.re,
+            };
+            let caps = match re.captures_from_pos(input, pos) {
                 Ok(Some(c)) => c,
                 _ => break,
             };
@@ -1852,7 +2218,11 @@ impl Pattern {
             }
             let (s, e) = groups[0].expect("group 0 always participates");
             out.push(groups);
-            if e == s {
+            if out.len() >= max {
+                break;
+            }
+            after_empty = e == s;
+            if after_empty {
                 if e >= input.len() {
                     break;
                 }
@@ -1862,6 +2232,11 @@ impl Pattern {
             }
         }
         out
+    }
+
+    /// The byte ranges of every successive `Matcher.find()` match.
+    pub fn find_ranges(&self, input: &str) -> Vec<(usize, usize)> {
+        self.find_all(input).iter().map(|g| g[0].expect("group 0 participates")).collect()
     }
 
     /// `Pattern.split(CharSequence, int)`.
@@ -1915,7 +2290,7 @@ impl Pattern {
         replacement: &str,
         max: usize,
     ) -> Result<String, JavaRegexError> {
-        let all = self.find_all(input);
+        let all = self.find_upto(input, max);
         if all.is_empty() {
             return Ok(input.to_string());
         }
@@ -2047,30 +2422,13 @@ struct Translated {
 }
 
 /// `Pattern.compile()`: `\Q` removal, then recursive-descent parsing into fancy-regex text.
-fn translate(regex: &str, flags: i32) -> PResult<Translated> {
+fn translate(regex: &str, flags: i32, safe_quant: bool) -> PResult<Translated> {
     let mut temp: Vec<u32> = regex.chars().map(|c| c as u32).collect();
     let mut pattern_length = temp.len();
     temp.push(0);
     temp.push(0);
-
     if flags & LITERAL == 0 {
         remove_qe_quoting(&mut temp, &mut pattern_length);
-    }
-
-    if flags & LITERAL != 0 {
-        let p = Parser {
-            original: regex,
-            temp: temp.clone(),
-            pattern_length,
-            cursor: 0,
-            flags0: flags,
-            capturing_group_count: 1,
-            named_groups: Vec::new(),
-            depth: 0,
-            pending_error: None,
-        };
-        let text: String = temp[..pattern_length].iter().map(|&c| p.emit_single(c)).collect();
-        return Ok(Translated { text, group_count: 0, named_groups: Vec::new() });
     }
 
     let mut p = Parser {
@@ -2082,12 +2440,17 @@ fn translate(regex: &str, flags: i32) -> PResult<Translated> {
         capturing_group_count: 1,
         named_groups: Vec::new(),
         depth: 0,
-        pending_error: None,
+        safe_quant,
     };
-    let text = p.expr()?;
-    if let Some(e) = p.pending_error.take() {
-        return Err(e);
+
+    if flags & LITERAL != 0 {
+        // The JDK turns the whole pattern into one slice, with no parsing at all.
+        let text: String =
+            p.temp[..p.pattern_length].iter().map(|&c| p.emit_literal(c, true)).collect();
+        return Ok(Translated { text, group_count: 0, named_groups: Vec::new() });
     }
+
+    let text = p.expr()?;
     if p.pattern_length != p.cursor {
         if p.peek() == ')' as u32 {
             return p.error("Unmatched closing ')'");
