@@ -745,7 +745,10 @@ impl JexlArithmetic {
             Value::Object(o) => match o.as_any().downcast_ref::<Range>() {
                 // IntegerRange/LongRange are Collections whose isEmpty() is always false
                 Some(_) => Ok(Some(false)),
-                None => Ok(def),
+                None => match o.as_collection() {
+                    Some((_, elements)) => Ok(Some(elements.is_empty())),
+                    None => Ok(def),
+                },
             },
             Value::Map(m) => Ok(Some(m.is_empty())),
             _ => Ok(def),
@@ -762,7 +765,10 @@ impl JexlArithmetic {
             Value::Set(s) => Ok(Some(s.len() as i32)),
             Value::Object(o) => match o.as_any().downcast_ref::<Range>() {
                 Some(r) => Ok(Some(r.size())),
-                None => Ok(def),
+                None => match o.as_collection() {
+                    Some((_, elements)) => Ok(Some(elements.len() as i32)),
+                    None => Ok(def),
+                },
             },
             Value::Map(m) => Ok(Some(m.len() as i32)),
             _ => Ok(def),
@@ -1210,7 +1216,7 @@ fn ord(o: std::cmp::Ordering) -> i32 {
 fn is_collection(v: &Value) -> bool {
     match v {
         Value::List(_) | Value::Set(_) => true,
-        Value::Object(o) => o.as_any().downcast_ref::<Range>().is_some(),
+        Value::Object(o) => o.as_any().downcast_ref::<Range>().is_some() || o.as_collection().is_some(),
         _ => false,
     }
 }
@@ -1222,7 +1228,10 @@ fn collection_contains(container: &Value, e: &Value) -> bool {
         Value::Set(s) => s.contains(e),
         Value::Object(o) => match o.as_any().downcast_ref::<Range>() {
             Some(r) => r.contains(e),
-            None => false,
+            None => match o.as_collection() {
+                Some((_, elements)) => elements.iter().any(|c| c.java_equals(e)),
+                None => false,
+            },
         },
         _ => false,
     }
@@ -1248,6 +1257,12 @@ fn for_each_element(v: &Value, mut f: impl FnMut(Value) -> bool) {
         Value::Object(o) => {
             if let Some(r) = o.as_any().downcast_ref::<Range>() {
                 for e in r.iter() {
+                    if !f(e) {
+                        return;
+                    }
+                }
+            } else if let Some((_, elements)) = o.as_collection() {
+                for e in elements {
                     if !f(e) {
                         return;
                     }

@@ -53,6 +53,12 @@ pub fn encode(v: &Value) -> Json {
             with(typed("Set", Some(Json::Arr(items))), "c", Json::str(set.kind().class_name()))
         }
         Value::AtomicBoolean(_) => with(typed("Object", Some(Json::str(&v.java_to_string()))), "c", Json::str(&v.class_name())),
+        // a Map's keySet()/entrySet() really are java.util.Set, so Oracle.encode takes that branch
+        Value::Object(o) if matches!(o.as_collection(), Some((true, _))) => {
+            let (_, elements) = o.as_collection().expect("set view");
+            let items: Vec<Json> = elements.iter().map(encode).collect();
+            with(typed("Set", Some(Json::Arr(items))), "c", Json::str(&v.class_name()))
+        }
         Value::Map(m) => {
             let entries: Vec<Json> = m
                 .snapshot()

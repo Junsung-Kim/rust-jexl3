@@ -162,5 +162,11 @@ fn node_image(node: NodeRef<'_>) -> JString {
     if let Some(p) = node.regex() {
         return JString::from(p.pattern());
     }
+    // ASTArrayLiteral, ASTMapLiteral and ASTSetLiteral are the only nodes that override
+    // toString(); they render themselves through the Debugger. Everything else falls back to
+    // SimpleNode.toString(), which is jjtNodeName[id].
+    if matches!(node.kind(), JJTARRAYLITERAL | JJTMAPLITERAL | JJTSETLITERAL) {
+        return crate::internal::debugger::Debugger::new().data(node);
+    }
     JString::from(node.node_name())
 }

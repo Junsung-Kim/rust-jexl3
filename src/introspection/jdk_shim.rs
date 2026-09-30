@@ -17,6 +17,7 @@ use num_traits::{One, Signed, Zero};
 use crate::internal::range::{Direction, Range, Width};
 use crate::java::big_decimal::{BigDecimal, MathError, RoundingMode};
 use crate::java::hash_map::{JHashMap, JHashSet};
+use crate::java::map_view::{MapEntry, MapView, ViewKind};
 use crate::java::number;
 use crate::java::regex;
 use crate::java::string::{JString, JStringBuilder};
@@ -607,11 +608,20 @@ fn arg_bigdec(v: &Value) -> BigDecimal {
     }
 }
 
+fn view_of(v: &Value) -> &MapView {
+    v.as_host::<MapView>().expect("map view")
+}
+
+fn entry_of(v: &Value) -> &MapEntry {
+    v.as_host::<MapEntry>().expect("map entry")
+}
+
 fn arg_values(v: &Value) -> Vec<Value> {
     match v {
         Value::Array(a) => a.snapshot(),
         Value::List(l) => l.snapshot(),
         Value::Set(s) => s.snapshot(),
+        Value::Object(o) => o.as_collection().map(|(_, e)| e).unwrap_or_default(),
         _ => Vec::new(),
     }
 }
@@ -727,7 +737,12 @@ fn tables_for(v: &Value) -> Vec<&'static [Sig]> {
             "java.lang.Class" => vec![CLASS, OBJECT],
             "java.lang.StringBuilder" => vec![STRINGBUILDER, CHARSEQUENCE, OBJECT],
             n if n.starts_with("org.apache.commons.jexl3.internal.") => vec![RANGE, COLLECTION, OBJECT],
-            _ => vec![ITERATOR, OBJECT],
+            _ => match o.as_any().downcast_ref::<MapView>() {
+                Some(view) if view.kind() == ViewKind::Values => vec![MAPVIEW, COLLECTION, OBJECT],
+                Some(_) => vec![MAPVIEW, SET, COLLECTION, OBJECT],
+                None if o.as_any().is::<MapEntry>() => vec![MAPENTRY, OBJECT],
+                None => vec![ITERATOR, OBJECT],
+            },
         },
         Value::AtomicBoolean(_) => vec![OBJECT],
     }
@@ -1574,7 +1589,7 @@ impl JexlUberspect for JdkShim {
                     // lazily, like Java: a range whose max is the type's MAX_VALUE never ends
                     return Some(range_iterator(r));
                 }
-                None
+                o.as_collection().map(|(_, e)| Box::new(e.into_iter()) as Box<dyn Iterator<Item = Value> + Send>)
             }
             Value::Array(a) => Some(Box::new(a.snapshot().into_iter())),
             // Java iterates a Map's values
@@ -3265,6 +3280,25 @@ fn linked_peek(o: &Value, first: bool) -> Result<Value, JexlException> {
     }
 }
 
+/// The mutators a map view supports: it writes through to the map it came from.
+const MAPVIEW: &[Sig] = sigs!("java.util.Collection";
+    "remove"("java.lang.Object") -> "boolean" = |o, a| boolean(view_of(o).remove(&a[0]));
+    "clear"() -> "void" = |o, _| {
+        let view = view_of(o);
+        let map = view.map().clone();
+        for (k, _) in view.entries() {
+            map.write().map.remove(&k);
+        }
+        Ok(Value::Null)
+    };
+);
+
+const MAPENTRY: &[Sig] = sigs!("java.util.Map$Entry";
+    "getKey"() -> "java.lang.Object" = |o, _| Ok(entry_of(o).key());
+    "getValue"() -> "java.lang.Object" = |o, _| Ok(entry_of(o).value());
+    "setValue"("java.lang.Object") -> "java.lang.Object" = |o, a| Ok(entry_of(o).set_value(a[0].clone()));
+);
+
 const SET: &[Sig] = sigs!("java.util.Set";
     "add"("java.lang.Object") -> "boolean" = |o, a| boolean(set_of(o).write().set.add(a[0].clone()));
     "remove"("java.lang.Object") -> "boolean" = |o, a| boolean(set_of(o).write().set.remove(&a[0]));
@@ -3327,6 +3361,9 @@ const MAP: &[Sig] = sigs!("java.util.Map";
             _ => boolean(false),
         }
     };
+    "keySet"() -> "java.util.Set" = |o, _| Ok(Value::object(MapView::new(map_of(o), ViewKind::Keys)));
+    "values"() -> "java.util.Collection" = |o, _| Ok(Value::object(MapView::new(map_of(o), ViewKind::Values)));
+    "entrySet"() -> "java.util.Set" = |o, _| Ok(Value::object(MapView::new(map_of(o), ViewKind::Entries)));
     "containsKey"("java.lang.Object") -> "boolean" = |o, a| boolean(map_of(o).contains_key(&a[0]));
     "containsValue"("java.lang.Object") -> "boolean" =
         |o, a| boolean(map_of(o).snapshot().iter().any(|(_, v)| v.java_equals(&a[0])));

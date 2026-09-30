@@ -368,6 +368,11 @@ pub trait HostObject: Any + Send + Sync {
     fn java_hash_code(&self) -> Option<i32> {
         None
     }
+    /// `instanceof java.util.Collection`: whether Java also sees it as a Set, and what it holds
+    /// right now. A map view answers here; everything else is not a collection.
+    fn as_collection(&self) -> Option<(bool, Vec<Value>)> {
+        None
+    }
     fn as_any(&self) -> &dyn Any;
 }
 

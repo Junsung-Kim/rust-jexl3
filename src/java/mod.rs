@@ -2,6 +2,7 @@
 // These are not JEXL classes; each file names the JDK class whose behavior it reproduces.
 pub mod big_decimal;
 pub mod hash_map;
+pub mod map_view;
 pub mod number;
 pub mod string;
 
