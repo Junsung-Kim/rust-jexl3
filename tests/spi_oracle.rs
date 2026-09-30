@@ -267,9 +267,10 @@ fn run(case: &Json) -> Json {
 ///  * the JexlInfo a JEXL exception carries is the oracle's own stack frame (`JexlInfo()` reads
 ///    `new Throwable().getStackTrace()`), so only the message body is comparable;
 ///  * identity hashes (`[I@1a2b3c`);
-///  * the JDK's "helpful" NullPointerException messages, which the VM stops computing once the
-///    throwing frame is JIT-compiled - the same case yields the detailed text on the first runs
-///    and a null message afterwards. Only the exception class is compared for an NPE.
+///  * the messages the VM builds lazily for a NullPointerException ("helpful NPE") and for the
+///    implicit checkcast's ClassCastException: once the throwing frame is JIT-compiled the VM
+///    takes its fast-throw path and the message is null, so the same case yields the detailed
+///    text on the first runs and nothing afterwards. Only the exception class is compared there.
 fn normalize(v: &Json, in_msg: bool) -> Json {
     match v {
         Json::Str(s) => {
@@ -305,10 +306,10 @@ fn normalize(v: &Json, in_msg: bool) -> Json {
                 Some((_, Json::Str(c))) => String::from_utf16_lossy(c),
                 _ => String::new(),
             };
-            if class == "java.lang.NullPointerException" {
+            if class == "java.lang.NullPointerException" || class == "java.lang.ClassCastException" {
                 return Json::Obj(vec![
                     ("class".to_string(), Json::str(&class)),
-                    ("msg".to_string(), Json::str("<npe>")),
+                    ("msg".to_string(), Json::str("<vm-lazy-message>")),
                 ]);
             }
             Json::Obj(

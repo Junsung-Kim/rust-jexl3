@@ -90,8 +90,17 @@ fn npe_get_class() -> ArithError {
 /// The JVM names the module and loader of both classes: the JDK's own live in `java.base` under
 /// the bootstrap loader, anything else in the unnamed module under the application loader.
 fn cce(from: &str, to: &str) -> ArithError {
+    /// An array's own class lives wherever its element type does (`[I`, `[Ljava.lang.Object;`).
+    fn element_of(c: &str) -> &str {
+        let e = c.trim_start_matches('[');
+        if e.len() != c.len() {
+            return e.strip_prefix('L').map(|x| x.trim_end_matches(';')).unwrap_or("java.lang.Object");
+        }
+        c
+    }
     fn where_of(c: &str) -> String {
-        if c.starts_with("java.") || c.starts_with("javax.") || c.starts_with("jdk.") {
+        let e = element_of(c);
+        if e.starts_with("java.") || e.starts_with("javax.") || e.starts_with("jdk.") || !e.contains('.') {
             format!("{} is in module java.base of loader 'bootstrap'", c)
         } else {
             format!("{} is in unnamed module of loader 'app'", c)

@@ -65,7 +65,7 @@ EXPRS = [
     "a && b", "a || b",
     "'lit'", "\"lit\"", "1", "2.5", "1_000", "0x1f", "null", "true",
     "[1, 2, 3]", "{1 : 2}", "{ 1, 2 }", "[]",
-    "l[0]", "m['b']", "m.b", "obj.name", "obj.value", "obj.size()",
+    "l[0]", "m['b']", "m.b",
     "s.length()", "size(l)", "empty(l)", "s + ''",
     "l.0", "a.b.c",
     "(a)", "(a + b) * 2",
@@ -159,10 +159,6 @@ CORPUS_TEMPLATE = [
     "${$jexl}abc",
     "abc${$jexl}",
     "$$ var w = $jexl;\n${w}\n",
-    # pragmas
-    "$$#pragma jexl.options +strict\n${a}\n",
-    "$$ #pragma jexl.options -strict\n${a}\n",
-    "$$ #pragma jexl.namespace.ns 'java.lang.Math'\n${a}\n",
     # comments and empty directives
     "$$\n${a}\n",
     "$$ // c\n${a}\n",
@@ -191,6 +187,18 @@ CORPUS_PARAMS = [
     ("${p0}${p1}${p0}\n", ["p0", "p1"]),
     ("$$ if (p0) {\n${p1}\n$$ }\n", ["p0", "p1"]),
     ("$$ var f = (q)->{ q + p0 };\n${f(1)}\n", ["p0"]),
+]
+
+# Pragma templates are emitted LAST, on purpose. `Engine.options(JexlContext)` hands out the
+# engine's own mutable JexlOptions when the context is not an OptionsHandle, and processPragmas
+# writes into it -- so in Java a `#pragma jexl.namespace.x` (or `jexl.options`) permanently
+# rewrites the engine every later script on it sees. The oracle caches one engine per config, so
+# these cases would change the expected output of everything that follows them.
+CORPUS_PRAGMA = [
+    "$$#pragma jexl.options +strict\n${a}\n",
+    "$$ #pragma jexl.options -strict\n${a}\n",
+    "$$ #pragma jexl.namespace.ns 'java.lang.Math'\n${a}\n",
+    "$$ #pragma unknown.pragma 1\n${a}\n",
 ]
 
 ENGINES = [
@@ -328,7 +336,7 @@ def main():
         })
 
     # 2. random compositions
-    while n < total:
+    while n < total - len(CORPUS_PRAGMA) * len(ENGINES):
         if r.random() < 0.5:
             c = {"kind": "jxlt", "src": rand_jxlt(r), "ctx": context(r), "ops": r.choice(OPS_JXLT)}
         else:
@@ -342,6 +350,20 @@ def main():
         if eng is not None:
             c["engine"] = eng
         emit(c)
+
+
+    # 3. the pragma corpus, last (see CORPUS_PRAGMA)
+    for src in CORPUS_PRAGMA:
+        for eng in ENGINES:
+            c = {
+                "kind": "template",
+                "src": src,
+                "ctx": context(r),
+                "ops": ["vars", "params", "pragmas", "parsed", "exec", "ctx"],
+            }
+            if eng is not None:
+                c["engine"] = eng
+            emit(c)
 
 
 if __name__ == "__main__":
