@@ -103,7 +103,7 @@ fn math<T>(e: MathError) -> Result<T, JexlException> {
 pub struct ClassValue {
     /// Class.getName()
     pub name: String,
-    /// primitive classes (Integer.TYPE) print as their name, not "class <name>"
+    /// primitive classes (Integer.TYPE) print as their name, not `"class <name>"`
     pub primitive: bool,
 }
 

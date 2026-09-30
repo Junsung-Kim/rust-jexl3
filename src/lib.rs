@@ -18,3 +18,8 @@ pub mod jexl_options;
 pub mod jxlt_engine;
 pub mod parser;
 pub mod value;
+
+/// The README's examples compile and run as doctests, so they cannot drift from the API.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;

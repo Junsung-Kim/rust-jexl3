@@ -31,6 +31,10 @@ jobs:
             echo "::error title=cargo test failed::${summary}"
             exit 1
           fi
+      # what docs.rs will build
+      - run: cargo doc --no-deps --release
+        env:
+          RUSTDOCFLAGS: -D warnings
       - run: cargo package
 
   msrv:

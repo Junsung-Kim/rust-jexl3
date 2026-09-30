@@ -31,25 +31,27 @@ If you know the Java API, you already know this one; the names are the same, in 
 
 ```rust
 use std::sync::Arc;
-use rust_jexl3::jexl_context::MapContext;
+use rust_jexl3::jexl_context::{JexlContext, MapContext};
 use rust_jexl3::jexl_engine::JexlBuilder;
 use rust_jexl3::value::Value;
 
-let jexl = JexlBuilder::new().strict(true).cache(512).create();
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let jexl = JexlBuilder::new().strict(true).cache(512).create();
 
-let script = jexl.create_script("a.b > 1 && name == '한글'")?;
+    let script = jexl.create_script("a.b > 1 && name == '한글'")?;
 
-// every ant-ish path the script reads, the way JexlScript.getVariables() reports them
-for path in script.get_variables() {
-    println!("{:?}", path.iter().map(|p| p.to_rust()).collect::<Vec<_>>());
+    // every ant-ish path the script reads, the way JexlScript.getVariables() reports them
+    for path in script.get_variables() {
+        println!("{:?}", path.iter().map(|p| p.to_rust()).collect::<Vec<_>>());
+    }
+
+    let context = Arc::new(MapContext::new());
+    context.set("a.b", Value::Integer(2))?;
+    context.set("name", Value::string("한글"))?;
+
+    assert!(matches!(script.execute(context)?, Value::Boolean(true)));
+    Ok(())
 }
-
-let context = Arc::new(MapContext::new());
-context.set("a.b", Value::Integer(2))?;
-context.set("name", Value::string("한글"))?;
-
-assert!(matches!(script.execute(context)?, Value::Boolean(true)));
-# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 ## Using your own types
