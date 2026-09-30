@@ -69,9 +69,12 @@ fn nfe_units(e: number::NumberFormatException, s: &JString) -> ArithError {
     const PREFIX: &str = "For input string: \"";
     if let Some(rest) = e.0.strip_prefix(PREFIX) {
         if let Some(close) = rest.rfind('"') {
-            return ArithError::NumberFormat(
-                JStringBuilder::new().str(PREFIX).jstr(s).str("\"").str(&rest[close + 1..]).build(),
-            );
+            // only substitute when the message quotes the whole input (BigInteger quotes a slice)
+            if rest[..close] == s.to_rust() {
+                return ArithError::NumberFormat(
+                    JStringBuilder::new().str(PREFIX).jstr(s).str("\"").str(&rest[close + 1..]).build(),
+                );
+            }
         }
     }
     ArithError::NumberFormat(JString::from(e.0))
