@@ -11,6 +11,12 @@ fuzz_target!(|data: &str| {
     if data.len() > 4096 {
         return;
     }
+    // JEXL 3.2.1's parser backtracks exponentially on deeply nested unterminated literals, in Java
+    // as much as here (see COMPATIBILITY.md); skip those so the fuzzer keeps moving.
+    // ponytail: a crude bracket count, because the point is only to bound the search.
+    if data.bytes().filter(|b| matches!(b, b'{' | b'[' | b'(')).count() > 6 {
+        return;
+    }
     let engine = engine();
     if let Ok(script) = engine.create_script(data) {
         let _ = script.get_source_text();
