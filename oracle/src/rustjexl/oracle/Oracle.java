@@ -245,6 +245,10 @@ public final class Oracle {
                     }
                     break;
                 }
+                case "tokens": {
+                    r.put("tokens", tokens(src, Boolean.TRUE.equals(kase.get("registers"))));
+                    break;
+                }
                 case "template": {
                     JxltEngine jxlt = jexl.createJxltEngine();
                     JxltEngine.Template t;
@@ -309,6 +313,35 @@ public final class Oracle {
             r.put("harness_error", String.valueOf(xharness));
         }
         return r;
+    }
+
+    /** Dumps the token stream of the real ParserTokenManager (lexer differential tests). */
+    static List<Object> tokens(String src, boolean registers) {
+        List<Object> out = new ArrayList<>();
+        try {
+            org.apache.commons.jexl3.parser.ParserTokenManager tm = new org.apache.commons.jexl3.parser.ParserTokenManager(
+                new org.apache.commons.jexl3.parser.SimpleCharStream(new org.apache.commons.jexl3.parser.StringProvider(src)));
+            if (registers) {
+                java.lang.reflect.Field f = tm.getClass().getDeclaredField("defaultLexState");
+                f.setAccessible(true);
+                f.setInt(tm, 2);
+                tm.SwitchTo(2);
+            }
+            while (true) {
+                org.apache.commons.jexl3.parser.Token t = tm.getNextToken();
+                List<Object> tk = new ArrayList<>();
+                tk.add(t.kind); tk.add(t.image); tk.add(t.beginLine); tk.add(t.beginColumn); tk.add(t.endLine); tk.add(t.endColumn);
+                out.add(tk);
+                if (t.kind == 0) break;
+            }
+        } catch (org.apache.commons.jexl3.parser.TokenMgrException x) {
+            Map<String, Object> e = new LinkedHashMap<>();
+            e.put("msg", x.getMessage()); e.put("line", x.getLine()); e.put("column", x.getColumn()); e.put("after", x.getAfter());
+            out.add(e);
+        } catch (ReflectiveOperationException x) {
+            throw new IllegalStateException(x);
+        }
+        return out;
     }
 
     static List<Object> strings(String[] s) {
