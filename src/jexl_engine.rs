@@ -131,6 +131,9 @@ pub struct JexlScript {
     /// port of: Closure.frame — Some once `curry` has bound arguments, which is exactly what makes
     /// a Java `Script` a `Closure`.
     frame: Option<Frame>,
+    /// The engine view this script runs with when the context brings no options of its own:
+    /// then it depends on the engine and the script alone, so it is worked out once.
+    engine_ref: std::sync::OnceLock<Arc<EngineRef>>,
 }
 
 impl JexlEngine {
@@ -173,7 +176,7 @@ impl JexlEngine {
     ) -> Result<JexlScript, JexlException> {
         let source = crate::internal::engine::trim_source(script_text);
         let parsed = self.parse(info, &features, &source, names)?;
-        Ok(JexlScript { engine: self.clone(), source: Some(source), parsed, frame: None })
+        Ok(JexlScript { engine: self.clone(), source: Some(source), parsed, frame: None, engine_ref: std::sync::OnceLock::new() })
     }
 
     /// port of: Engine.parse(JexlInfo, JexlFeatures, String, Scope)
@@ -320,7 +323,12 @@ impl JexlEngine {
 
     // port of: Engine.options(ASTJexlScript, JexlContext) and Engine.processPragmas
     pub(crate) fn options_for_script(&self, parsed: &Parsed, context: &dyn JexlContext) -> JexlOptions {
-        let mut opts = self.options_for(context);
+        self.script_options(self.options_for(context), parsed, Some(context))
+    }
+
+    /// The options a script runs with, from `opts`; `processor` hears each pragma (None when the
+    /// caller notifies it separately).
+    fn script_options(&self, mut opts: JexlOptions, parsed: &Parsed, processor: Option<&dyn JexlContext>) -> JexlOptions {
         if self.script_features.is_lexical() {
             opts.set_lexical(true);
         }
@@ -345,8 +353,10 @@ impl JexlEngine {
                             }
                         }
                     }
-                    if context.is_pragma_processor() {
-                        context.process_pragma(key, value);
+                    if let Some(context) = processor {
+                        if context.is_pragma_processor() {
+                            context.process_pragma(key, value);
+                        }
                     }
                 }
                 if let Some(map) = ns {
@@ -355,6 +365,16 @@ impl JexlEngine {
             }
         }
         opts
+    }
+
+    /// port of: the `processPragma` half of Engine.processPragmas, for a context that implements
+    /// JexlContext.PragmaProcessor.
+    fn notify_pragmas(&self, parsed: &Parsed, context: &dyn JexlContext) {
+        if let Some(pragmas) = parsed.node().script().and_then(|s| s.get_pragmas()) {
+            for (key, value) in pragmas {
+                context.process_pragma(key, value);
+            }
+        }
     }
 
     pub(crate) fn engine_ref(self: &Arc<Self>, options: &JexlOptions) -> Arc<EngineRef> {
@@ -429,7 +449,13 @@ impl JexlScript {
             Some(f) => Some(f.assign(scopes.get(f.scope()), Some(args))),
             None => scope.and_then(|s| create_frame(scopes, s, None, Some(args))),
         };
-        JexlScript { engine: self.engine.clone(), source: self.source.clone(), parsed: self.parsed.clone(), frame }
+        JexlScript {
+            engine: self.engine.clone(),
+            source: self.source.clone(),
+            parsed: self.parsed.clone(),
+            frame,
+            engine_ref: self.engine_ref.clone(),
+        }
     }
 
     /// port of: Script.getUnboundParameters / Closure.getUnboundParameters
@@ -472,8 +498,24 @@ impl JexlScript {
 
     /// port of: Script.execute(JexlContext, Object...) and Closure.execute(JexlContext, Object...)
     pub fn execute_args(&self, context: Arc<dyn JexlContext>, args: &[Value]) -> Result<Value, JexlException> {
-        let options = self.engine.options_for_script(&self.parsed, context.as_ref());
-        let jexl = self.engine.engine_ref(&options);
+        let (jexl, options) = if context.get_engine_options().is_none() {
+            // A PragmaProcessor still hears every pragma on every execution, as in Java.
+            if context.is_pragma_processor() {
+                self.engine.notify_pragmas(&self.parsed, context.as_ref());
+            }
+            let jexl = self
+                .engine_ref
+                .get_or_init(|| {
+                    let options = self.engine.script_options(self.engine.options.clone(), &self.parsed, None);
+                    self.engine.engine_ref(&options)
+                })
+                .clone();
+            let options = jexl.options.clone();
+            (jexl, options)
+        } else {
+            let options = self.engine.options_for_script(&self.parsed, context.as_ref());
+            (self.engine.engine_ref(&options), options)
+        };
         let mut interpreter =
             Interpreter::new(jexl, self.parsed.ast.clone(), options, context, self.local_frame(args));
         let ast = self.parsed.ast.clone();

@@ -653,7 +653,7 @@ fn properties() -> Value {
     map(vec![
         (s("java.version"), s("25")),
         (s("os.name"), s("Linux")),
-        (s("user.name"), s("ec2-user")),
+        (s("user.name"), s("duke")),
     ])
 }
 
@@ -670,7 +670,7 @@ fn test_for_each_with_map() {
         Value::Map(m) => m.snapshot().last().expect("entries").1.clone(),
         _ => unreachable!(),
     };
-    eq(&last, &s("ec2-user"));
+    eq(&last, &s("duke"));
     eq(&ok(e.execute(jc)), &last);
 }
 

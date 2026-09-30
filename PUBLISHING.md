@@ -4,23 +4,18 @@ Everything here needs credentials, so it is a runbook rather than a script. The 
 ready otherwise: `sh tools/verify.sh` is the gate, `cargo package` succeeds at 344 KiB, the
 licence and NOTICE are in place, and no private data is in the history.
 
-## 1. Decide the two names
+## 1. Names
 
-`Cargo.toml` still carries a placeholder:
-
-```toml
-repository = "https://github.com/OWNER/rust-jexl3"
-```
-
-Replace `OWNER` with the GitHub account or organisation. The crate name (`rust-jexl3`) is already
-chosen; `jexl`, `jexl-eval` and `jexl-parser` on crates.io are a *different* expression language
-(TomFrost's JavaScript JEXL), which is why the name says which JEXL this is.
+Crate `rust-jexl3`, repository `https://github.com/Junsung-Kim/rust-jexl3`, both set in
+`Cargo.toml`. `jexl`, `jexl-eval` and `jexl-parser` on crates.io are a *different* expression
+language (TomFrost's JavaScript JEXL), which is why the name says which JEXL this is.
 
 ## 2. Create the repository and push
 
 ```sh
 gh auth login                       # interactive; in Claude Code type it as `! gh auth login`
-gh repo create <owner>/rust-jexl3 --public --source=. --remote=origin --push
+git remote add origin https://github.com/Junsung-Kim/rust-jexl3.git
+git push -u origin master
 ```
 
 ## 3. Publish the crate

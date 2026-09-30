@@ -43,4 +43,7 @@ fi
 echo "== privacy =="
 git status --short | grep -q . && line "working tree" "DIRTY" || line "working tree" "clean"
 git log --all --name-only --format= | sort -u | grep -icE "exprs\.jsonl" > /dev/null \
-  && line "private corpus in history" "PRESENT" || line "private corpus in history" "absent"
+  && line "private corpus file in history" "PRESENT" || line "private corpus file in history" "absent"
+# the contents, not just the name: needs JEXL_PRIVATE_CORPUS, skipped without it
+leak=$(python3 tools/leak_check.py 2>&1 | head -1)
+line "private corpus values" "$leak"

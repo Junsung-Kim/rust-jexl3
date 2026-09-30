@@ -718,9 +718,13 @@ impl Interpreter {
     /// The shared shape of the binary arithmetic/comparison visits.
     fn binary(&mut self, node: NodeRef<'_>, data: Option<&Value>, operator: JexlOperator, symbol: &str) -> R {
         let (left, right) = self.operands(node, data)?;
-        let result = Operators::try_overload(self, node, operator, &[left.clone(), right.clone()])?;
-        if !is_try_failed(&result) {
-            return Ok(result);
+        // Operators.tryOverload answers TRY_FAILED at once when nothing overloads the operator;
+        // asking first spares cloning both operands and the sentinel on every `+`, `<`, `==`...
+        if self.uberspect.overloads(operator) {
+            let result = Operators::try_overload(self, node, operator, &[left.clone(), right.clone()])?;
+            if !is_try_failed(&result) {
+                return Ok(result);
+            }
         }
         let a = &self.arithmetic;
         let outcome = match operator {
