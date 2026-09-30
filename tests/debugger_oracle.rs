@@ -13,13 +13,13 @@
 mod common;
 
 use common::json::{self, Json};
-use rust_jexl::internal::debugger::Debugger;
-use rust_jexl::internal::engine;
-use rust_jexl::java::string::JString;
-use rust_jexl::jexl_features::JexlFeatures;
-use rust_jexl::jexl_info::JexlInfo;
-use rust_jexl::parser::jexl_node::{NodeRef, Parsed};
-use rust_jexl::parser::parser::Parser;
+use rust_jexl3::internal::debugger::Debugger;
+use rust_jexl3::internal::engine;
+use rust_jexl3::java::string::JString;
+use rust_jexl3::jexl_features::JexlFeatures;
+use rust_jexl3::jexl_info::JexlInfo;
+use rust_jexl3::parser::jexl_node::{NodeRef, Parsed};
+use rust_jexl3::parser::parser::Parser;
 
 // --------------------------------------------------------------------------------- engine config
 // (same shape as tests/parser_oracle.rs: only what the parser reads matters here)
@@ -386,7 +386,7 @@ fn detail_of_locates_the_cause() {
     // a sub-node: the MulNode `b * c`
     let mul = nth_node(root, 3).expect("node");
     assert_eq!(mul.class_name(), "ASTMulNode");
-    let h = rust_jexl::parser::jexl_node::NodeHandle::new(p.ast.clone(), mul.id);
+    let h = rust_jexl3::parser::jexl_node::NodeHandle::new(p.ast.clone(), mul.id);
     let d = Debugger::detail_of(&h).expect("detail");
     assert_eq!((d.start, d.end), (4, 9));
 }

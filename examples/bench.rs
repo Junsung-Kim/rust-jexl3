@@ -4,9 +4,9 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use rust_jexl::jexl_context::{JexlContext, MapContext};
-use rust_jexl::jexl_engine::JexlBuilder;
-use rust_jexl::value::Value;
+use rust_jexl3::jexl_context::{JexlContext, MapContext};
+use rust_jexl3::jexl_engine::JexlBuilder;
+use rust_jexl3::value::Value;
 
 const SCRIPTS: [&str; 4] = [
     "a.b > 1 && name == '한글'",

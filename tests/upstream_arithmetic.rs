@@ -11,10 +11,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use common::upstream::*;
-use rust_jexl::jexl_arithmetic::JexlArithmetic;
-use rust_jexl::jexl_context::JexlContext;
-use rust_jexl::jexl_engine::{empty_context, JexlEngine, JexlScript};
-use rust_jexl::value::Value;
+use rust_jexl3::jexl_arithmetic::JexlArithmetic;
+use rust_jexl3::jexl_context::JexlContext;
+use rust_jexl3::jexl_engine::{empty_context, JexlEngine, JexlScript};
+use rust_jexl3::value::Value;
 
 // ----------------------------------------------------------------------------------- local sugar
 
@@ -1132,8 +1132,8 @@ fn string_builder(text: &str) -> Value {
 }
 
 fn pattern(regex: &str) -> Value {
-    Value::object(rust_jexl::value::PatternValue(Arc::new(
-        rust_jexl::java::regex::Pattern::compile(regex).expect("compile"),
+    Value::object(rust_jexl3::value::PatternValue(Arc::new(
+        rust_jexl3::java::regex::Pattern::compile(regex).expect("compile"),
     )))
 }
 

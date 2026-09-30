@@ -7,18 +7,18 @@ mod common;
 
 use common::encode::encode;
 use common::json::{self, Json};
-use rust_jexl::internal::engine;
-use rust_jexl::jexl_features::JexlFeatures;
-use rust_jexl::jexl_info::JexlInfo;
-use rust_jexl::parser::jexl_node::{NodeRef, Parsed};
-use rust_jexl::parser::parser::Parser;
-use rust_jexl::value::Value;
+use rust_jexl3::internal::engine;
+use rust_jexl3::jexl_features::JexlFeatures;
+use rust_jexl3::jexl_info::JexlInfo;
+use rust_jexl3::parser::jexl_node::{NodeRef, Parsed};
+use rust_jexl3::parser::parser::Parser;
+use rust_jexl3::value::Value;
 
 fn strings(v: &[String]) -> Json {
     Json::Arr(v.iter().map(|s| Json::str(s)).collect())
 }
 
-fn jstrings(v: &[rust_jexl::java::string::JString]) -> Json {
+fn jstrings(v: &[rust_jexl3::java::string::JString]) -> Json {
     Json::Arr(v.iter().map(|s| Json::Str(s.units().to_vec())).collect())
 }
 

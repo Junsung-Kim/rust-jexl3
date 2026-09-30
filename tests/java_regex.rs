@@ -3,7 +3,7 @@
 // Replays JVM-generated fixtures from tools/javagen/RegexGen.java (Corretto 25).
 // Set JAVA_REGEX_DIR to replay a locally generated campaign instead of tests/data/java_regex.
 // Set JAVA_REGEX_FULL=1 to check \p{...} over every code point instead of a sample.
-use rust_jexl::java::regex::*;
+use rust_jexl3::java::regex::*;
 use std::path::PathBuf;
 
 fn data_dir() -> PathBuf {

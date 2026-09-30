@@ -1,4 +1,4 @@
-# rust-jexl
+# rust-jexl3
 
 A Rust port of [Apache Commons JEXL](https://commons.apache.org/proper/commons-jexl/) **3.2.1**,
 behaviorally compatible with the Java library: the same grammar, the same results, the same result
@@ -8,7 +8,7 @@ behaviorally compatible with the Java library: the same grammar, the same result
 > [TomFrost/Jexl](https://github.com/TomFrost/Jexl), a different expression language that borrowed
 > the name. This is the Apache one: `var`, lambdas, loops, namespaces, pragmas, JXLT templates.
 
-> rust-jexl is an independent port. It is not affiliated with, endorsed by, or sponsored by The
+> rust-jexl3 is an independent port. It is not affiliated with, endorsed by, or sponsored by The
 > Apache Software Foundation.
 
 Compatibility is not a claim, it is a test: every subsystem is measured against the official
@@ -18,7 +18,7 @@ Compatibility is not a claim, it is a test: every subsystem is measured against 
 
 ```toml
 [dependencies]
-rust-jexl = "0.1"
+rust-jexl3 = "0.1"
 ```
 
 ## Quick start
@@ -27,9 +27,9 @@ If you know the Java API, you already know this one; the names are the same, in 
 
 ```rust
 use std::sync::Arc;
-use rust_jexl::jexl_context::MapContext;
-use rust_jexl::jexl_engine::JexlBuilder;
-use rust_jexl::value::Value;
+use rust_jexl3::jexl_context::MapContext;
+use rust_jexl3::jexl_engine::JexlBuilder;
+use rust_jexl3::value::Value;
 
 let jexl = JexlBuilder::new().strict(true).cache(512).create();
 

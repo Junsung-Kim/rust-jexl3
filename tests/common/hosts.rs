@@ -3,7 +3,7 @@
 
 use std::any::Any;
 
-use rust_jexl::value::{HostObject, Value};
+use rust_jexl3::value::{HostObject, Value};
 
 /// Stands for "JSON null": a non-null object, so `x == null` is false for it.
 #[derive(Debug)]
@@ -49,7 +49,7 @@ pub struct Bean {
     name: std::sync::Mutex<String>,
     value: std::sync::Mutex<i32>,
     flag: std::sync::Mutex<bool>,
-    items: rust_jexl::value::JList,
+    items: rust_jexl3::value::JList,
 }
 
 impl Bean {
@@ -58,7 +58,7 @@ impl Bean {
             name: std::sync::Mutex::new(name.to_string()),
             value: std::sync::Mutex::new(value),
             flag: std::sync::Mutex::new(false),
-            items: rust_jexl::value::JList::array_list(Vec::new()),
+            items: rust_jexl3::value::JList::array_list(Vec::new()),
         }
     }
     pub fn name(&self) -> String {
@@ -127,9 +127,9 @@ pub fn create(name: &str) -> Value {
 
 use std::sync::Arc;
 
-use rust_jexl::introspection::jdk_shim::HostIntrospector;
-use rust_jexl::introspection::{JexlMethod, JexlPropertyGet, JexlPropertySet};
-use rust_jexl::jexl_exception::JexlException;
+use rust_jexl3::introspection::jdk_shim::HostIntrospector;
+use rust_jexl3::introspection::{JexlMethod, JexlPropertyGet, JexlPropertySet};
+use rust_jexl3::jexl_exception::JexlException;
 
 /// One method of a test host object.
 struct HostMethod {

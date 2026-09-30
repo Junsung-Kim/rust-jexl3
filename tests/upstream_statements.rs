@@ -18,13 +18,13 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use rust_jexl::introspection::jdk_shim::{HostIntrospector, JdkShim};
-use rust_jexl::introspection::uberspect::Uberspect;
-use rust_jexl::introspection::{JexlMethod, JexlPropertyGet, JexlPropertySet, ResolverStrategy};
-use rust_jexl::jexl_context::{JexlContext, MapContext};
-use rust_jexl::jexl_engine::{empty_context, JexlBuilder, JexlEngine, JexlScript};
-use rust_jexl::jexl_exception::JexlException;
-use rust_jexl::value::{Component, HostObject, JArray, JList, JMap, Value};
+use rust_jexl3::introspection::jdk_shim::{HostIntrospector, JdkShim};
+use rust_jexl3::introspection::uberspect::Uberspect;
+use rust_jexl3::introspection::{JexlMethod, JexlPropertyGet, JexlPropertySet, ResolverStrategy};
+use rust_jexl3::jexl_context::{JexlContext, MapContext};
+use rust_jexl3::jexl_engine::{empty_context, JexlBuilder, JexlEngine, JexlScript};
+use rust_jexl3::jexl_exception::JexlException;
+use rust_jexl3::value::{Component, HostObject, JArray, JList, JMap, Value};
 
 // ------------------------------------------------------------------ harness
 
@@ -295,13 +295,13 @@ impl HostIntrospector for Beans {
 /// port of: org.apache.commons.jexl3.JexlEvalContext — variables plus mutable engine options.
 struct EvalContext {
     vars: MapContext,
-    options: std::sync::RwLock<rust_jexl::jexl_options::JexlOptions>,
+    options: std::sync::RwLock<rust_jexl3::jexl_options::JexlOptions>,
     namespaces: std::collections::HashMap<String, Value>,
 }
 
 impl EvalContext {
     fn build() -> EvalContext {
-        let mut o = rust_jexl::jexl_options::JexlOptions::new();
+        let mut o = rust_jexl3::jexl_options::JexlOptions::new();
         // JexlTestCase: JexlOptions.setDefaultFlags("-safe", "+lexical")
         o.set_safe(false);
         o.set_lexical(true);
@@ -323,7 +323,7 @@ impl EvalContext {
         Arc::new(c)
     }
 
-    fn options(&self, f: impl FnOnce(&mut rust_jexl::jexl_options::JexlOptions)) {
+    fn options(&self, f: impl FnOnce(&mut rust_jexl3::jexl_options::JexlOptions)) {
         f(&mut self.options.write().unwrap())
     }
 }
@@ -338,7 +338,7 @@ impl JexlContext for EvalContext {
     fn has(&self, name: &str) -> bool {
         self.vars.has(name)
     }
-    fn get_engine_options(&self) -> Option<rust_jexl::jexl_options::JexlOptions> {
+    fn get_engine_options(&self) -> Option<rust_jexl3::jexl_options::JexlOptions> {
         Some(self.options.read().unwrap().clone())
     }
     fn resolve_namespace(&self, name: Option<&str>) -> Option<Value> {
@@ -1271,7 +1271,7 @@ fn test_namespace348b() {
 // port of: ContextNamespaceTest.testNamespace348c
 #[test]
 fn test_namespace348c() {
-    let f = rust_jexl::jexl_features::JexlFeatures::new().namespace_test(Some(Arc::new(|_| true)));
+    let f = rust_jexl3::jexl_features::JexlFeatures::new().namespace_test(Some(Arc::new(|_| true)));
     let jexl = hosts(builder().namespaces(ns_map()).features(f).safe(false)).create();
     run348a(&jexl, EvalContext::with_namespace("ns", Value::object(Bean)), "ns : ");
     run348b(&jexl, EvalContext::with_namespace("ns", Value::object(Bean)), "ns : ");
@@ -1282,7 +1282,7 @@ fn test_namespace348c() {
 // port of: ContextNamespaceTest.testNamespace348d
 #[test]
 fn test_namespace348d() {
-    let f = rust_jexl::jexl_features::JexlFeatures::new().namespace_test(Some(Arc::new(|_| true)));
+    let f = rust_jexl3::jexl_features::JexlFeatures::new().namespace_test(Some(Arc::new(|_| true)));
     let jexl = hosts(builder().features(f).safe(false)).create();
     run348a(&jexl, EvalContext::with_namespace("ns", Value::object(Bean)), "ns : ");
     run348b(&jexl, EvalContext::with_namespace("ns", Value::object(Bean)), "ns : ");
@@ -1316,12 +1316,12 @@ impl HostObject for Var {
 /// port of: SideEffectTest.SelfArithmetic's propertyGet/propertySet/arrayGet/arraySet overloads.
 struct SelfUberspect(Uberspect);
 
-impl rust_jexl::introspection::JexlUberspect for SelfUberspect {
+impl rust_jexl3::introspection::JexlUberspect for SelfUberspect {
     fn get_resolvers(
         &self,
-        op: Option<rust_jexl::jexl_operator::JexlOperator>,
+        op: Option<rust_jexl3::jexl_operator::JexlOperator>,
         obj: &Value,
-    ) -> &'static [rust_jexl::introspection::PropertyResolver] {
+    ) -> &'static [rust_jexl3::introspection::PropertyResolver] {
         self.0.get_resolvers(op, obj)
     }
     fn get_constructor(&self, h: &Value, args: &[Value]) -> Option<Arc<dyn JexlMethod>> {
@@ -1332,7 +1332,7 @@ impl rust_jexl::introspection::JexlUberspect for SelfUberspect {
     }
     fn get_property_get_with(
         &self,
-        r: &[rust_jexl::introspection::PropertyResolver],
+        r: &[rust_jexl3::introspection::PropertyResolver],
         obj: &Value,
         id: &Value,
     ) -> Option<Arc<dyn JexlPropertyGet>> {
@@ -1340,7 +1340,7 @@ impl rust_jexl::introspection::JexlUberspect for SelfUberspect {
     }
     fn get_property_set_with(
         &self,
-        r: &[rust_jexl::introspection::PropertyResolver],
+        r: &[rust_jexl3::introspection::PropertyResolver],
         obj: &Value,
         id: &Value,
         arg: &Value,
@@ -1350,16 +1350,16 @@ impl rust_jexl::introspection::JexlUberspect for SelfUberspect {
     fn get_iterator(&self, obj: &Value) -> Option<Box<dyn Iterator<Item = Value> + Send>> {
         self.0.get_iterator(obj)
     }
-    fn overloads(&self, operator: rust_jexl::jexl_operator::JexlOperator) -> bool {
-        use rust_jexl::jexl_operator::JexlOperator::*;
+    fn overloads(&self, operator: rust_jexl3::jexl_operator::JexlOperator) -> bool {
+        use rust_jexl3::jexl_operator::JexlOperator::*;
         matches!(operator, PropertyGet | PropertySet | ArrayGet | ArraySet)
     }
     fn get_operator(
         &self,
-        operator: rust_jexl::jexl_operator::JexlOperator,
+        operator: rust_jexl3::jexl_operator::JexlOperator,
         args: &[Value],
     ) -> Option<Arc<dyn JexlMethod>> {
-        use rust_jexl::jexl_operator::JexlOperator::*;
+        use rust_jexl3::jexl_operator::JexlOperator::*;
         let key = match operator {
             PropertyGet | PropertySet => "value",
             ArrayGet | ArraySet => "VALUE",
@@ -1394,7 +1394,7 @@ fn test_override_get_set() {
     let uber = SelfUberspect(Uberspect::new());
     let jexl = builder()
         .cache(64)
-        .arithmetic(rust_jexl::jexl_arithmetic::JexlArithmetic::new(false, None, i32::MIN))
+        .arithmetic(rust_jexl3::jexl_arithmetic::JexlArithmetic::new(false, None, i32::MIN))
         .uberspect(Arc::new(uber))
         .create();
     let jc = empty_context();

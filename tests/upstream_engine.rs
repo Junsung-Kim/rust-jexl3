@@ -25,17 +25,17 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use common::upstream::{assert_java_eq, class_of, string_array, HostGet, HostMethod, HostSet, JexlEvalContext};
-use rust_jexl::introspection::jdk_shim::{HostIntrospector, JdkShim};
-use rust_jexl::introspection::uberspect::Uberspect;
-use rust_jexl::introspection::{
+use rust_jexl3::introspection::jdk_shim::{HostIntrospector, JdkShim};
+use rust_jexl3::introspection::uberspect::Uberspect;
+use rust_jexl3::introspection::{
     JexlMethod, JexlPropertyGet, JexlPropertySet, JexlUberspect, PropertyResolver, ResolverStrategy,
 };
-use rust_jexl::jexl_arithmetic::JexlArithmetic;
-use rust_jexl::jexl_context::{JexlContext, MapContext};
-use rust_jexl::jexl_engine::{empty_context, JexlBuilder, JexlEngine};
-use rust_jexl::jexl_exception::{ExceptionKind, JexlException};
-use rust_jexl::jexl_features::JexlFeatures;
-use rust_jexl::value::{Component, HostObject, JArray, JList, JMap, ListKind, Value};
+use rust_jexl3::jexl_arithmetic::JexlArithmetic;
+use rust_jexl3::jexl_context::{JexlContext, MapContext};
+use rust_jexl3::jexl_engine::{empty_context, JexlBuilder, JexlEngine};
+use rust_jexl3::jexl_exception::{ExceptionKind, JexlException};
+use rust_jexl3::jexl_features::JexlFeatures;
+use rust_jexl3::value::{Component, HostObject, JArray, JList, JMap, ListKind, Value};
 
 // --------------------------------------------------------------------------------------- harness
 
@@ -1557,17 +1557,17 @@ fn test_flags() {
 struct MapArithmetic;
 
 impl common::upstream::ArithmeticOverloads for MapArithmetic {
-    fn overloads(&self, operator: rust_jexl::jexl_operator::JexlOperator) -> bool {
-        use rust_jexl::jexl_operator::JexlOperator::*;
+    fn overloads(&self, operator: rust_jexl3::jexl_operator::JexlOperator) -> bool {
+        use rust_jexl3::jexl_operator::JexlOperator::*;
         matches!(operator, PropertyGet | PropertySet | ArrayGet | ArraySet)
     }
 
     fn get_operator(
         &self,
-        operator: rust_jexl::jexl_operator::JexlOperator,
+        operator: rust_jexl3::jexl_operator::JexlOperator,
         args: &[Value],
     ) -> Option<Arc<dyn JexlMethod>> {
-        use rust_jexl::jexl_operator::JexlOperator::*;
+        use rust_jexl3::jexl_operator::JexlOperator::*;
         if !matches!(args.first(), Some(Value::Map(_))) {
             return None;
         }

@@ -1,11 +1,11 @@
 [package]
-name = "rust-jexl"
+name = "rust-jexl3"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
 license = "Apache-2.0"
 description = "A faithful Rust port of Apache Commons JEXL 3.2.1, behaviorally compatible with the Java library"
-repository = "https://github.com/OWNER/rust-jexl"
+repository = "https://github.com/OWNER/rust-jexl3"
 readme = "README.md"
 keywords = ["jexl", "expression", "script", "interpreter", "template"]
 categories = ["parser-implementations", "template-engine"]
@@ -17,7 +17,7 @@ exclude = [
 ]
 
 [lib]
-name = "rust_jexl"
+name = "rust_jexl3"
 
 [dependencies]
 num-bigint = "0.4"

@@ -3,8 +3,8 @@
 //! tools/gen_lexer_cases.py + oracle `tokens` mode) and compares every token and lexical error.
 mod common;
 use common::json::{self, Json};
-use rust_jexl::parser::parser_token_manager::ParserTokenManager;
-use rust_jexl::parser::simple_char_stream::SimpleCharStream;
+use rust_jexl3::parser::parser_token_manager::ParserTokenManager;
+use rust_jexl3::parser::simple_char_stream::SimpleCharStream;
 
 fn lex(src: &[u16], registers: bool) -> Json {
     let mut tm = ParserTokenManager::new(SimpleCharStream::new(src));

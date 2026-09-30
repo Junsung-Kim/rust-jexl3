@@ -16,17 +16,17 @@ use std::any::Any;
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, RwLock};
 
-use rust_jexl::internal::lexical_scope::LexicalScope;
-use rust_jexl::internal::template_interpreter::StringWriter;
-use rust_jexl::introspection::jdk_shim::{HostIntrospector, JdkShim};
-use rust_jexl::introspection::uberspect::Uberspect;
-use rust_jexl::introspection::{JexlMethod, JexlPropertyGet, JexlPropertySet, ResolverStrategy};
-use rust_jexl::jexl_context::{JexlContext, MapContext};
-use rust_jexl::jexl_engine::{empty_context, JexlBuilder, JexlEngine, JexlScript};
-use rust_jexl::jexl_exception::JexlException;
-use rust_jexl::jexl_features::JexlFeatures;
-use rust_jexl::jexl_options::JexlOptions;
-use rust_jexl::value::{Component, HostObject, JArray, JList, Value};
+use rust_jexl3::internal::lexical_scope::LexicalScope;
+use rust_jexl3::internal::template_interpreter::StringWriter;
+use rust_jexl3::introspection::jdk_shim::{HostIntrospector, JdkShim};
+use rust_jexl3::introspection::uberspect::Uberspect;
+use rust_jexl3::introspection::{JexlMethod, JexlPropertyGet, JexlPropertySet, ResolverStrategy};
+use rust_jexl3::jexl_context::{JexlContext, MapContext};
+use rust_jexl3::jexl_engine::{empty_context, JexlBuilder, JexlEngine, JexlScript};
+use rust_jexl3::jexl_exception::JexlException;
+use rust_jexl3::jexl_features::JexlFeatures;
+use rust_jexl3::jexl_options::JexlOptions;
+use rust_jexl3::value::{Component, HostObject, JArray, JList, Value};
 
 // ------------------------------------------------------------------ harness
 
@@ -199,7 +199,7 @@ impl JexlContext for EvalContext {
         self.pragma_processor
     }
     // port of: LexicalTest.VarContext.processPragma
-    fn process_pragma(&self, key: &rust_jexl::java::string::JString, value: &Value) {
+    fn process_pragma(&self, key: &rust_jexl3::java::string::JString, value: &Value) {
         if key.to_rust() == "jexl.options" && value.java_to_string() == "canonical" {
             let mut o = self.options.write().unwrap();
             o.set_strict(true);
@@ -505,7 +505,7 @@ fn test_lexical3() {
 #[test]
 fn test_lexical4() {
     let jexl_ = builder().silent(false).strict(true).lexical(true).create();
-    let jxlt = rust_jexl::jxlt_engine::create_jxlt_engine(&jexl_);
+    let jxlt = rust_jexl3::jxlt_engine::create_jxlt_engine(&jexl_);
     let ctxt: Arc<dyn JexlContext> = Arc::new(MapContext::new());
     let rpt = "<report>\n\n$$var y = 1; var x = 2;\n${x + y}\n</report>\n";
     let t = jxlt.create_template_str(rpt, None).expect("template");
@@ -623,7 +623,7 @@ fn test_parameter0() {
     let e = jexl.create_script(str_).expect("parse");
     assert_eq!(e.get_parameters().len(), 1);
     let e = jexl
-        .create_script_info(Some(rust_jexl::jexl_info::JexlInfo::new(Some("TestScript".into()), 1, 1)), str_, None)
+        .create_script_info(Some(rust_jexl3::jexl_info::JexlInfo::new(Some("TestScript".into()), 1, 1)), str_, None)
         .expect("parse");
     assert_eq!(e.get_parameters().len(), 1);
 }
@@ -1165,7 +1165,7 @@ fn test_pragmas() {
 // port of: PragmaTest.testJxltPragmas
 #[test]
 fn test_jxlt_pragmas() {
-    let engine = rust_jexl::jxlt_engine::create_jxlt_engine(&builder().create());
+    let engine = rust_jexl3::jxlt_engine::create_jxlt_engine(&builder().create());
     let tscript = engine
         .create_template_str("$$ #pragma one 1\n$$ #pragma the.very.hard 'truth'\n2;", None)
         .expect("template");

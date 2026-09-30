@@ -2,7 +2,7 @@
 // Typed value encoding shared with the Java oracle (Oracle.encode); see oracle/PROTOCOL.md.
 #![allow(dead_code)]
 
-use rust_jexl::value::Value;
+use rust_jexl3::value::Value;
 
 use super::json::Json;
 
@@ -32,12 +32,12 @@ pub fn encode(v: &Value) -> Json {
         Value::Double(d) => with(
             typed("Double", Some(Json::str(&v.java_to_string()))),
             "bits",
-            Json::str(&format!("{:x}", rust_jexl::value::double_raw_bits(*d))),
+            Json::str(&format!("{:x}", rust_jexl3::value::double_raw_bits(*d))),
         ),
         Value::Float(f) => with(
             typed("Float", Some(Json::str(&v.java_to_string()))),
             "bits",
-            Json::str(&format!("{:x}", rust_jexl::value::float_raw_bits(*f))),
+            Json::str(&format!("{:x}", rust_jexl3::value::float_raw_bits(*f))),
         ),
         Value::Character(c) => typed("Character", Some(Json::Str(vec![*c]))),
         Value::String(s) => typed("String", Some(Json::Str(s.units().to_vec()))),
@@ -69,14 +69,14 @@ pub fn encode(v: &Value) -> Json {
             let class = m.kind().class_name();
             with(typed("Map", Some(Json::Arr(entries))), "c", Json::str(class))
         }
-        Value::Object(o) if o.as_any().downcast_ref::<rust_jexl::internal::range::Range>().is_some() => {
-            let r = o.as_any().downcast_ref::<rust_jexl::internal::range::Range>().expect("range");
+        Value::Object(o) if o.as_any().downcast_ref::<rust_jexl3::internal::range::Range>().is_some() => {
+            let r = o.as_any().downcast_ref::<rust_jexl3::internal::range::Range>().expect("range");
             let items = Json::Arr(vec![encode(&r.get_min()), encode(&r.get_max())]);
             with(typed("Range", Some(items)), "c", Json::str(&r.class_name()))
         }
-        Value::Object(o) if o.as_any().downcast_ref::<rust_jexl::internal::script::Closure>().is_some() => {
-            let c = o.as_any().downcast_ref::<rust_jexl::internal::script::Closure>().expect("closure");
-            let text = rust_jexl::internal::debugger::Debugger::new().data_indent(c.ast.node(c.script), 2);
+        Value::Object(o) if o.as_any().downcast_ref::<rust_jexl3::internal::script::Closure>().is_some() => {
+            let c = o.as_any().downcast_ref::<rust_jexl3::internal::script::Closure>().expect("closure");
+            let text = rust_jexl3::internal::debugger::Debugger::new().data_indent(c.ast.node(c.script), 2);
             with(typed("Script", Some(Json::Str(text.units().to_vec()))), "c", Json::str("internal.Closure"))
         }
         Value::Object(o) if o.class_name() == "java.lang.Class" => {

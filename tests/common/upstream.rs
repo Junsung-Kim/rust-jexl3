@@ -12,20 +12,20 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
-use rust_jexl::introspection::jdk_shim::{HostIntrospector, JdkShim};
-use rust_jexl::introspection::uberspect::Uberspect;
-use rust_jexl::introspection::{
+use rust_jexl3::introspection::jdk_shim::{HostIntrospector, JdkShim};
+use rust_jexl3::introspection::uberspect::Uberspect;
+use rust_jexl3::introspection::{
     JexlMethod, JexlPropertyGet, JexlPropertySet, JexlUberspect, PropertyResolver, ResolverStrategy,
 };
-use rust_jexl::java::hash_map::{JHashMap, JHashSet};
-use rust_jexl::java::string::JString;
-use rust_jexl::jexl_arithmetic::JexlArithmetic;
-use rust_jexl::jexl_context::{JexlContext, MapContext};
-use rust_jexl::jexl_engine::{JexlBuilder, JexlEngine};
-use rust_jexl::jexl_exception::JexlException;
-use rust_jexl::jexl_operator::JexlOperator;
-use rust_jexl::jexl_options::JexlOptions;
-use rust_jexl::value::{Component, HostObject, JArray, JList, JMap, JSet, ListKind, MapKind, SetKind, Value};
+use rust_jexl3::java::hash_map::{JHashMap, JHashSet};
+use rust_jexl3::java::string::JString;
+use rust_jexl3::jexl_arithmetic::JexlArithmetic;
+use rust_jexl3::jexl_context::{JexlContext, MapContext};
+use rust_jexl3::jexl_engine::{JexlBuilder, JexlEngine};
+use rust_jexl3::jexl_exception::JexlException;
+use rust_jexl3::jexl_operator::JexlOperator;
+use rust_jexl3::jexl_options::JexlOptions;
+use rust_jexl3::value::{Component, HostObject, JArray, JList, JMap, JSet, ListKind, MapKind, SetKind, Value};
 
 // =============================================================================== value shorthands
 
@@ -46,11 +46,11 @@ pub fn d(n: f64) -> Value {
 }
 
 pub fn big_int(text: &str) -> Value {
-    Value::big_integer(rust_jexl::java::number::parse_big_integer(text, 10).expect("BigInteger"))
+    Value::big_integer(rust_jexl3::java::number::parse_big_integer(text, 10).expect("BigInteger"))
 }
 
 pub fn big_dec(text: &str) -> Value {
-    Value::big_decimal(rust_jexl::java::big_decimal::BigDecimal::parse(text).expect("BigDecimal"))
+    Value::big_decimal(rust_jexl3::java::big_decimal::BigDecimal::parse(text).expect("BigDecimal"))
 }
 
 pub fn list(items: Vec<Value>) -> Value {
@@ -83,7 +83,7 @@ pub fn int_array(items: &[i32]) -> Value {
 
 /// `SomeClass.class` as a value.
 pub fn class_of(name: &str) -> Value {
-    rust_jexl::introspection::jdk_shim::ClassValue::of(name)
+    rust_jexl3::introspection::jdk_shim::ClassValue::of(name)
 }
 
 pub fn string_array(items: &[&str]) -> Value {
@@ -310,7 +310,7 @@ impl Asserter {
             Err(e) => {
                 if let Some(pattern) = match_exception {
                     let message = e.get_message().unwrap_or_else(JString::empty).to_rust();
-                    let p = rust_jexl::java::regex::Pattern::compile(pattern).expect("pattern");
+                    let p = rust_jexl3::java::regex::Pattern::compile(pattern).expect("pattern");
                     assert!(
                         p.matches(&message),
                         "expression: {}, expected: {}, got {}",

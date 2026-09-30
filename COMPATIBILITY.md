@@ -1,6 +1,6 @@
 # Compatibility with Apache Commons JEXL 3.2.1
 
-`rust-jexl` is measured against the official `commons-jexl3-3.2.1.jar` running on Corretto 25:
+`rust-jexl3` is measured against the official `commons-jexl3-3.2.1.jar` running on Corretto 25:
 every behavior below is either proven identical by the differential harness (see `PROGRESS.md`)
 or listed here as an intended divergence with a test that pins it.
 

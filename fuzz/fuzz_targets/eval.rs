@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use rust_jexl::jexl_context::{JexlContext, MapContext};
-use rust_jexl::value::Value;
+use rust_jexl3::jexl_context::{JexlContext, MapContext};
+use rust_jexl3::value::Value;
 
 /// A MapContext that is also a `JexlContext.CancellationHandle`.
 struct Cancellable {
@@ -43,7 +43,7 @@ fuzz_target!(|data: &str| {
     if data.bytes().filter(|b| matches!(b, b'{' | b'[' | b'(')).count() > 6 {
         return;
     }
-    let engine = rust_jexl::jexl_engine::JexlBuilder::new()
+    let engine = rust_jexl3::jexl_engine::JexlBuilder::new()
         .debug(true)
         .cache(0)
         .cancellable(true)

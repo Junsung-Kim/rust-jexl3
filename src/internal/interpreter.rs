@@ -406,7 +406,9 @@ impl Interpreter {
         if n.is_identifier_access() && n.is_safe() {
             return Ok(Value::Null);
         }
-        let attr_str = attribute.java_to_string();
+        // port of: `attribute != null ? attribute.toString() : null`, and JexlException's own
+        // `msg != null ? msg : ""` -- so a null property reads as '' , not 'null'.
+        let attr_str = if attribute.is_null() { String::new() } else { attribute.java_to_string() };
         self.unsolvable_property(n, &attr_str, true, xcause)
     }
 
@@ -455,7 +457,7 @@ impl Interpreter {
             }
             Some(n) => n,
         };
-        let attr_str = attribute.java_to_string();
+        let attr_str = if attribute.is_null() { String::new() } else { attribute.java_to_string() };
         self.unsolvable_property(n, &attr_str, true, xcause)?;
         Ok(())
     }

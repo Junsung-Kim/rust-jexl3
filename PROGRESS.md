@@ -1,6 +1,6 @@
-# PROGRESS — rust-jexl (resume point)
+# PROGRESS — rust-jexl3 (resume point)
 
-Target: behavioral identity with `commons-jexl3-3.2.1.jar` (oracle JDK: Corretto 25). Spec: `~/rust-jexl-PROMPT.md`.
+Target: behavioral identity with `commons-jexl3-3.2.1.jar` (oracle JDK: Corretto 25). Spec: `~/rust-jexl3-PROMPT.md`.
 Method: TDD. Each subsystem: oracle-derived cases / ported upstream tests committed and seen RED first, then ported code, then GREEN. Coverage measured with `cargo llvm-cov`.
 
 ## Baselines (measured)

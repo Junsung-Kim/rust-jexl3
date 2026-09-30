@@ -1,6 +1,6 @@
 // Replays JVM-generated HashMap/HashSet/LinkedHashMap/LinkedHashSet sequences
 // (tools/javagen/HashMapGen.java) and compares iteration order, table capacity and hashCode.
-use rust_jexl::java::hash_map::{string_hash_code, JHashMap, JHashSet, JavaHash};
+use rust_jexl3::java::hash_map::{string_hash_code, JHashMap, JHashSet, JavaHash};
 use std::cmp::Ordering;
 
 #[derive(Clone, Debug)]

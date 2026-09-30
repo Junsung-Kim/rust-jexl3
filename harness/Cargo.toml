@@ -9,4 +9,4 @@ name = "jexl-runner"
 path = "src/main.rs"
 
 [dependencies]
-rust-jexl = { path = ".." }
+rust-jexl3 = { path = ".." }

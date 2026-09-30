@@ -22,8 +22,8 @@ fuzz_target!(|data: &str| {
     let _ = engine.create_expression(None, data);
 });
 
-fn engine() -> Arc<rust_jexl::jexl_engine::JexlEngine> {
+fn engine() -> Arc<rust_jexl3::jexl_engine::JexlEngine> {
     use std::sync::OnceLock;
-    static ENGINE: OnceLock<Arc<rust_jexl::jexl_engine::JexlEngine>> = OnceLock::new();
-    ENGINE.get_or_init(|| rust_jexl::jexl_engine::JexlBuilder::new().debug(true).cache(0).create()).clone()
+    static ENGINE: OnceLock<Arc<rust_jexl3::jexl_engine::JexlEngine>> = OnceLock::new();
+    ENGINE.get_or_init(|| rust_jexl3::jexl_engine::JexlBuilder::new().debug(true).cache(0).create()).clone()
 }

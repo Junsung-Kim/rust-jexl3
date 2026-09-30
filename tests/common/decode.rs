@@ -3,11 +3,11 @@
 
 use std::sync::Arc;
 
-use rust_jexl::java::big_decimal::BigDecimal;
-use rust_jexl::java::hash_map::{JHashMap, JHashSet};
-use rust_jexl::java::number;
-use rust_jexl::java::string::JString;
-use rust_jexl::value::{Component, JArray, JList, JMap, JSet, ListKind, MapKind, SetKind, Value};
+use rust_jexl3::java::big_decimal::BigDecimal;
+use rust_jexl3::java::hash_map::{JHashMap, JHashSet};
+use rust_jexl3::java::number;
+use rust_jexl3::java::string::JString;
+use rust_jexl3::value::{Component, JArray, JList, JMap, JSet, ListKind, MapKind, SetKind, Value};
 
 use super::json::Json;
 

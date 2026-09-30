@@ -1,14 +1,14 @@
 use std::sync::Arc;
-use rust_jexl::jexl_context::MapContext;
-use rust_jexl::jexl_engine::JexlBuilder;
-use rust_jexl::java::string::JString;
-use rust_jexl::jexl_info::JexlInfo;
-use rust_jexl::internal::template_interpreter::StringWriter;
-use rust_jexl::value::Value;
+use rust_jexl3::jexl_context::MapContext;
+use rust_jexl3::jexl_engine::JexlBuilder;
+use rust_jexl3::java::string::JString;
+use rust_jexl3::jexl_info::JexlInfo;
+use rust_jexl3::internal::template_interpreter::StringWriter;
+use rust_jexl3::value::Value;
 
 fn main() {
     let engine = JexlBuilder::new().create();
-    let jxlt = rust_jexl::jxlt_engine::create_jxlt_engine(&engine);
+    let jxlt = rust_jexl3::jxlt_engine::create_jxlt_engine(&engine);
     let ctx = Arc::new(MapContext::new());
     let info = JexlInfo::new(Some("case".into()), 1, 1);
     let parms = vec!["p0".to_string(), "p1".to_string()];

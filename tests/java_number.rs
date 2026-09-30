@@ -2,8 +2,8 @@
 // Replays JVM-generated fixtures from tools/javagen/NumberGen.java (Corretto 25).
 // Set JAVA_NUMBER_DIR to replay a bigger locally generated campaign instead of tests/data/java_number.
 use num_bigint::BigInt;
-use rust_jexl::java::big_decimal::{BigDecimal, MathContext, MathError, RoundingMode};
-use rust_jexl::java::number::*;
+use rust_jexl3::java::big_decimal::{BigDecimal, MathContext, MathError, RoundingMode};
+use rust_jexl3::java::number::*;
 use std::path::PathBuf;
 
 fn data_dir() -> PathBuf {

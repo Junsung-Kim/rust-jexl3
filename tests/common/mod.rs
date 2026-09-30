@@ -6,7 +6,7 @@ pub mod json;
 pub mod upstream;
 
 use json::Json;
-use rust_jexl::java::big_decimal::{MathContext, RoundingMode};
+use rust_jexl3::java::big_decimal::{MathContext, RoundingMode};
 
 /// Parses the oracle's math-context spelling ("DECIMAL64", "5:HALF_UP", ...).
 pub fn math_context(spec: &str) -> MathContext {

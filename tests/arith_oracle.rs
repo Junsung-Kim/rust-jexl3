@@ -6,9 +6,9 @@ mod common;
 use common::decode::decode;
 use common::encode::encode;
 use common::json::{self, Json};
-use rust_jexl::jexl_arithmetic::{ArithError, JexlArithmetic};
-use rust_jexl::java::big_decimal::MathContext;
-use rust_jexl::value::Value;
+use rust_jexl3::jexl_arithmetic::{ArithError, JexlArithmetic};
+use rust_jexl3::java::big_decimal::MathContext;
+use rust_jexl3::value::Value;
 
 fn math_context(spec: Option<&Json>) -> MathContext {
     match spec.and_then(Json::string) {

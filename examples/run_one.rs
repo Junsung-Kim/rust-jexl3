@@ -2,8 +2,8 @@
 //! Usage: cargo run --example run_one -- "1 + 1"
 use std::sync::Arc;
 
-use rust_jexl::jexl_context::MapContext;
-use rust_jexl::jexl_engine::JexlBuilder;
+use rust_jexl3::jexl_context::MapContext;
+use rust_jexl3::jexl_engine::JexlBuilder;
 
 fn main() {
     let src = std::env::args().nth(1).expect("a script");

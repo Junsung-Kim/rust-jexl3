@@ -12,11 +12,11 @@ mod common;
 use std::sync::Arc;
 
 use common::upstream::*;
-use rust_jexl::internal::debugger::Debugger;
-use rust_jexl::internal::range::{Range, Width};
-use rust_jexl::jexl_context::{JexlContext, MapContext};
-use rust_jexl::jexl_engine::{empty_context, JexlEngine, JexlScript};
-use rust_jexl::value::{Component, JArray, Value};
+use rust_jexl3::internal::debugger::Debugger;
+use rust_jexl3::internal::range::{Range, Width};
+use rust_jexl3::jexl_context::{JexlContext, MapContext};
+use rust_jexl3::jexl_engine::{empty_context, JexlEngine, JexlScript};
+use rust_jexl3::value::{Component, JArray, Value};
 
 // ----------------------------------------------------------------------------------- local sugar
 

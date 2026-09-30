@@ -7,12 +7,12 @@ mod common;
 
 use common::decode::decode;
 use common::json::{self, Json};
-use rust_jexl::introspection::jdk_shim::{ClassValue, JdkShim};
-use rust_jexl::introspection::{JexlUberspect, PropertyResolver, ResolverStrategy};
-use rust_jexl::jexl_arithmetic::JexlArithmetic;
-use rust_jexl::jexl_exception::JexlException;
-use rust_jexl::jexl_operator::JexlOperator;
-use rust_jexl::value::Value;
+use rust_jexl3::introspection::jdk_shim::{ClassValue, JdkShim};
+use rust_jexl3::introspection::{JexlUberspect, PropertyResolver, ResolverStrategy};
+use rust_jexl3::jexl_arithmetic::JexlArithmetic;
+use rust_jexl3::jexl_exception::JexlException;
+use rust_jexl3::jexl_operator::JexlOperator;
+use rust_jexl3::value::Value;
 
 // ------------------------------------------------------------------ encoding (mirrors Oracle.encode)
 

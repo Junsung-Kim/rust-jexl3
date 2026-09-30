@@ -19,18 +19,18 @@ use std::sync::Arc;
 use common::decode::decode;
 use common::encode::encode;
 use common::json::{self, Json};
-use rust_jexl::internal::template_debugger::TemplateDebugger;
-use rust_jexl::internal::template_interpreter::StringWriter;
-use rust_jexl::java::string::JString;
-use rust_jexl::jexl_context::{JexlContext, MapContext};
-use rust_jexl::jexl_engine::{JexlBuilder, JexlEngine};
-use rust_jexl::jexl_features::JexlFeatures;
-use rust_jexl::jexl_info::JexlInfo;
-use rust_jexl::jxlt_engine;
-use rust_jexl::value::Value;
+use rust_jexl3::internal::template_debugger::TemplateDebugger;
+use rust_jexl3::internal::template_interpreter::StringWriter;
+use rust_jexl3::java::string::JString;
+use rust_jexl3::jexl_context::{JexlContext, MapContext};
+use rust_jexl3::jexl_engine::{JexlBuilder, JexlEngine};
+use rust_jexl3::jexl_features::JexlFeatures;
+use rust_jexl3::jexl_info::JexlInfo;
+use rust_jexl3::jxlt_engine;
+use rust_jexl3::value::Value;
 
 /// The exception shape Oracle.error() produces: class, message and one level of cause.
-fn error_json(e: &rust_jexl::jexl_exception::JexlException) -> Json {
+fn error_json(e: &rust_jexl3::jexl_exception::JexlException) -> Json {
     let mut kv = vec![
         ("class".into(), Json::str(&e.class_name())),
         ("msg".into(), e.get_message().map(|m| Json::Str(m.units().to_vec())).unwrap_or(Json::Null)),
@@ -88,9 +88,9 @@ fn features_of(spec: Option<&Json>) -> JexlFeatures {
 }
 
 fn build_engine(spec: Option<&Json>) -> Arc<JexlEngine> {
-    let shim = rust_jexl::introspection::jdk_shim::JdkShim::new(rust_jexl::introspection::ResolverStrategy::Jexl)
+    let shim = rust_jexl3::introspection::jdk_shim::JdkShim::new(rust_jexl3::introspection::ResolverStrategy::Jexl)
         .with_hosts(Arc::new(common::hosts::TestHosts));
-    let uber = rust_jexl::introspection::uberspect::Uberspect::new().with_shim(Arc::new(shim));
+    let uber = rust_jexl3::introspection::uberspect::Uberspect::new().with_shim(Arc::new(shim));
     let mut b = JexlBuilder::new().uberspect(Arc::new(uber));
     if let Some(Json::Obj(kv)) = spec {
         for (k, v) in kv {
@@ -125,7 +125,7 @@ fn build_engine(spec: Option<&Json>) -> Arc<JexlEngine> {
                         .and_then(Json::string)
                         .and_then(|s| s.parse::<i32>().ok())
                         .unwrap_or(i32::MIN);
-                    b.arithmetic(rust_jexl::jexl_arithmetic::JexlArithmetic::new(
+                    b.arithmetic(rust_jexl3::jexl_arithmetic::JexlArithmetic::new(
                         strict,
                         mc.map(|m| common::math_context(&m)),
                         scale,
