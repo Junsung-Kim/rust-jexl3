@@ -23,10 +23,11 @@ None open.
 Outside the committed suites, fresh random samples still find the edges of what the JDK shim
 models. The ones known today:
 
-- **Unicode tables.** `Character.getName(int)`, `getType(int)` and `getDirectionality(int)` need
-  the JDK's Unicode data, which the port does not carry. The indexed property JEXL builds from them
-  (`c.name`, `c.type`) is created exactly as on the JVM; asking it for a value with an int key fails
-  here where Java answers.
+- **Unicode character names.** `Character.getName(int)` needs the JDK's name table: 294,579 named
+  code points, 10 MB of text, measured on Corretto 25 -- far more than the whole crate, for a method
+  no expression reaches in practice. The indexed property `c.name` is still created as on the JVM;
+  reading it with an int key fails here where Java answers. (`getType` and `getDirectionality` are
+  carried: 4,099 and 2,300 runs, walked off the JVM by `tools/javagen/CharacterData.java`.)
 - Anything COMPATIBILITY.md lists as out of scope (`java.util.Date`, reflection, ...).
 
 ## A note on the oracle itself

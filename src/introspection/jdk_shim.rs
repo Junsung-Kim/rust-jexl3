@@ -17,6 +17,7 @@ use num_traits::{One, Signed, Zero};
 use crate::internal::range::{Direction, Range, Width};
 use crate::java::big_decimal::{BigDecimal, MathError, RoundingMode};
 use crate::java::hash_map::{JHashMap, JHashSet};
+use crate::java::character_data::{DIRECTIONALITY, TYPE};
 use crate::java::map_view::{MapEntry, MapView, ViewKind};
 use crate::java::number;
 use crate::java::regex;
@@ -533,6 +534,15 @@ fn arg_i64(v: &Value) -> i64 {
         Value::Double(d) => d2l(*d),
         _ => 0,
     }
+}
+
+/// The value of the run a code point falls in; `outside` for anything beyond 0..=0x10FFFF, which
+/// is what the JVM answers there (UNASSIGNED for getType, DIRECTIONALITY_UNDEFINED otherwise).
+fn code_point_run(runs: &[(u32, i8)], cp: i32, outside: i8) -> i8 {
+    if !(0..=0x10FFFF).contains(&cp) {
+        return outside;
+    }
+    runs[runs.partition_point(|(start, _)| *start <= cp as u32) - 1].1
 }
 
 /// A Java throwable escaping a JDK call.
@@ -2689,6 +2699,12 @@ const CHARACTER: &[Sig] = sigs!("java.lang.Character";
     "toUpperCase"("int") -> "int" = |_, a| int(cp_upper(arg_i32(&a[0])));
     "toLowerCase"("char") -> "char" = |_, a| Ok(Value::Character(char_lower(arg_char(&a[0]))));
     "toLowerCase"("int") -> "int" = |_, a| int(cp_lower(arg_i32(&a[0])));
+    // measured tables, walked off the JVM (tools/javagen/CharacterData.java)
+    "getType"("char") -> "int" = |_, a| int(i32::from(code_point_run(&TYPE, arg_char(&a[0]) as i32, 0)));
+    "getType"("int") -> "int" = |_, a| int(i32::from(code_point_run(&TYPE, arg_i32(&a[0]), 0)));
+    "getDirectionality"("char") -> "byte" =
+        |_, a| Ok(Value::Byte(code_point_run(&DIRECTIONALITY, arg_char(&a[0]) as i32, -1)));
+    "getDirectionality"("int") -> "byte" = |_, a| Ok(Value::Byte(code_point_run(&DIRECTIONALITY, arg_i32(&a[0]), -1)));
     "getNumericValue"("char") -> "int" = |_, a| int(char_numeric_value(arg_char(&a[0]) as i32));
     "getNumericValue"("int") -> "int" = |_, a| int(char_numeric_value(arg_i32(&a[0])));
     "valueOf"("char") -> "java.lang.Character" = |_, a| Ok(a[0].clone());

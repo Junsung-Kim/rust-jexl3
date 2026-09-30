@@ -14,7 +14,7 @@ or listed here as an intended divergence with a test that pins it.
 | JSR-223 (`org.apache.commons.jexl3.scripting`) | A `javax.script` integration has no meaning outside the JVM. |
 | `java.util.Date`, `Calendar`, `SimpleDateFormat`, `DecimalFormat`, `Locale` | Not modeled. A script that constructs one fails the way an unknown class does. Pinned by the upstream corpus (`new('java.util.Date')`). |
 | `java.lang.Object`'s monitor methods (`wait`, `notify`, `notifyAll`) | There is no Java monitor to own. In Java these resolve on the context and throw `IllegalMonitorStateException`; here they are unsolvable methods. Pinned by the upstream corpus (`wait(10)`). |
-| `Character.getName(int)`, `getType(int)`, `getDirectionality(int)` | These need the JDK's Unicode tables, which the port does not carry. JEXL's indexed properties over them (`c.name`, `c.type`) are created as on the JVM, but reading one with an int key fails here. |
+| `Character.getName(int)` | Needs the JDK's Unicode name table (10 MB of text on Corretto 25). `c.name` is created as on the JVM, but reading it with an int key fails here. `getType` and `getDirectionality` are carried, from tables measured on the JVM (Unicode as shipped with JDK 25). |
 | `org.w3c.dom` / `javax.xml` | Not modeled (upstream `ArithmeticTest.testXmlArithmetic`). |
 | Subclassing `JexlArithmetic` to *override* an operator | `JexlArithmetic` is a struct, not a class. Operator *overloads* work: register them through `JexlUberspect::get_operator`, which is the same path Java's `ArithmeticUberspect` uses. Overriding `divide`/`mod` outright (upstream `Arithmetic132`) has no equivalent. |
 | `JexlBuilder.logger` | The engine writes no log, so the silent-mode warning counts upstream asserts cannot be observed. |
