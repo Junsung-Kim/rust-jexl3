@@ -1727,14 +1727,16 @@ impl Interpreter {
         let v = |r: crate::jexl_arithmetic::R<Value>| Some(r.map_err(|e| self.bare(e)));
         match (name, args.len()) {
             ("empty", 1) => b(a.empty(&args[0])),
-            ("isEmpty", 1) => ob(a.is_empty(&args[0], None)),
+            // isEmpty(Object) is isEmpty(object, object == null)
+            ("isEmpty", 1) => ob(a.is_empty(&args[0], Some(args[0].is_null()))),
             ("isEmpty", 2) => match &args[1] {
                 Value::Boolean(d) => ob(a.is_empty(&args[0], Some(*d))),
                 Value::Null => ob(a.is_empty(&args[0], None)),
                 _ => None,
             },
+            // size(Object) is size(object, object == null ? 0 : 1)
             ("size", 1) => Some(
-                a.size(&args[0], None)
+                a.size(&args[0], Some(if args[0].is_null() { 0 } else { 1 }))
                     .map(|v| v.map(Value::Integer).unwrap_or(Value::Null))
                     .map_err(|e| self.bare(e)),
             ),
@@ -1866,6 +1868,20 @@ impl Interpreter {
                         if let Some(r) = self.arithmetic_method(name, &pargv) {
                             return self.invoked(node, name, r);
                         }
+                        // ...or a functor stored in a property of the target: `m.a()` where the
+                        // map holds a lambda under "a".
+                        if !narrow {
+                            let resolvers = self.uberspect.get_resolvers(None, &target);
+                            let id = Value::string(name);
+                            if let Some(get) = self.uberspect.get_property_get_with(resolvers, &target, &id) {
+                                if let Ok(v) = get.invoke(&target) {
+                                    if !v.is_null() {
+                                        functor_value = Some(v);
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
                     } else {
                         // a function call with no namespace: try the default namespace
                         let namespace = self.resolve_namespace(None, node)?;
@@ -1883,7 +1899,8 @@ impl Interpreter {
             }
             if let Some(f) = &functor_value {
                 if let Some(script) = f.as_host::<Closure>() {
-                    return self.invoked(node, "", script.execute(self, &argv));
+                    let name = method_name.clone().unwrap_or_default();
+                    return self.invoked(node, &name, script.execute(self, &argv));
                 }
                 if let Some(name) = &method_name {
                     if let Some(vm) = self.uberspect.get_method(f, name, &argv) {
