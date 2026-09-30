@@ -294,11 +294,15 @@ fn execution_matches_oracle() {
     };
     assert!(
         report.is_empty(),
-        "{} of {} execution cases differ (skipped {}); {} not in known_mismatches.txt:\n{}",
+        "{} of {} execution cases differ (skipped {}); {}:\n{}",
         total,
         n,
         skipped,
-        report.len(),
+        if baselines_apply("EXEC_CASES") {
+            format!("{} not in known_mismatches.txt", report.len())
+        } else {
+            "no baseline for a local campaign".to_string()
+        },
         report.iter().take(10).cloned().collect::<Vec<_>>().join("\n")
     );
 }
@@ -433,11 +437,15 @@ fn script_api_matches_oracle() {
     };
     assert!(
         report.is_empty(),
-        "{} of {} script api cases differ (skipped {}); {} not in known_mismatches.txt:\n{}",
+        "{} of {} script api cases differ (skipped {}); {}:\n{}",
         total,
         n,
         skipped,
-        report.len(),
+        if baselines_apply("API_CASES") {
+            format!("{} not in known_mismatches.txt", report.len())
+        } else {
+            "no baseline for a local campaign".to_string()
+        },
         report.iter().take(10).cloned().collect::<Vec<_>>().join("\n")
     );
 }
