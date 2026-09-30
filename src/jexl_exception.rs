@@ -293,6 +293,14 @@ impl JexlException {
     }
 
     // port of: JexlException.getDetail
+    /// port of: JexlException.Annotation.getAnnotation
+    pub fn get_annotation(&self) -> Option<String> {
+        match self.kind {
+            ExceptionKind::Annotation => self.get_detail().map(|d| d.to_rust()),
+            _ => None,
+        }
+    }
+
     pub fn get_detail(&self) -> Option<&JString> {
         self.detail.as_ref()
     }
@@ -326,6 +334,11 @@ impl JexlException {
     /// Whether this is a JEXL exception (as opposed to a raw Java throwable).
     pub fn is_jexl(&self) -> bool {
         !matches!(self.kind, ExceptionKind::Java { .. })
+    }
+
+    /// JexlException.Return / Break / Continue — the three that unwind without being errors.
+    pub fn is_control_flow(&self) -> bool {
+        matches!(self.kind, ExceptionKind::Return { .. } | ExceptionKind::Break | ExceptionKind::Continue)
     }
 
     // port of: JexlException.parserError

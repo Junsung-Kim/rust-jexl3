@@ -1940,16 +1940,42 @@ impl Interpreter {
         } else {
             None
         };
-        // Java hands the remaining statement to the context's AnnotationProcessor; without one it
-        // just runs it. A processor needs re-entrancy we do not have here, so the statement runs.
-        let processed = self.context.process_annotation(&aname, argv.as_deref(), &mut || Ok(Value::Null));
-        match processed {
-            Some(Err(e)) => Err(e),
-            _ => match self.process_annotation(stmt, index + 1, data) {
-                Ok(v) => Ok(v),
-                Err(e) if e.is_jexl() => Err(e),
-                Err(e) => self.annotation_error(anode, &aname, Some(e)),
-            },
+        // port of: Interpreter.AnnotatedCall — the processor decides whether the statement runs,
+        // and not running it is an error.
+        let context = self.context.clone();
+        let called = std::cell::Cell::new(false);
+        // Java hands Return/Break/Continue to the processor as a *value*; here they travel beside
+        // it, which is the same outcome unless a processor swallows one.
+        let mut escaped: Option<JexlException> = None;
+        let result = {
+            let called = &called;
+            let escaped = &mut escaped;
+            let mut run = || {
+                called.set(true);
+                match self.process_annotation(stmt, index + 1, data) {
+                    Ok(v) => Ok(v),
+                    Err(e) if e.is_control_flow() => {
+                        *escaped = Some(e);
+                        Ok(Value::Null)
+                    }
+                    Err(e) => Err(e),
+                }
+            };
+            match context.process_annotation(&aname, argv.as_deref(), &mut run) {
+                Some(r) => r,
+                // no AnnotationProcessor: `stmt.call()`
+                None => run(),
+            }
+        };
+        if let Some(e) = escaped {
+            return Err(e);
+        }
+        match result {
+            Ok(v) if called.get() => Ok(v),
+            // the processor never called the statement
+            Ok(_) => self.annotation_error(anode, &aname, None),
+            Err(e) if e.is_jexl() => Err(e),
+            Err(e) => self.annotation_error(anode, &aname, Some(e)),
         }
     }
 }

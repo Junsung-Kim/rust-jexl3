@@ -1209,3 +1209,39 @@ fn test_safe_pragma() {
     assert!(x.is_jexl(), "{}", x.message());
 }
 
+
+// port of: AnnotationTest.testUnknown
+// (the CaptureLog warn counting is skipped: JexlBuilder takes no logger here)
+#[test]
+fn test_unknown() {
+    for silent in [true, false] {
+        let jc = EvalContext::annotating();
+        let jexl = builder().strict(true).silent(silent).create();
+        let script = jexl.create_script("@unknown('42') { return 42; }").expect("parse");
+        match script.execute(jc.clone()) {
+            // the processor returned without running the statement: Java calls that an error
+            Err(x) => assert_eq!(x.get_annotation().as_deref(), Some("unknown"), "{}", x.message()),
+            Ok(v) => assert!(silent, "should have failed, got {:?}", v.java_to_string()),
+        }
+        assert_eq!(jc.count(), 1);
+        assert!(jc.names().contains("unknown"));
+        assert!(!jc.names().contains("42"));
+    }
+}
+
+// port of: AnnotationTest.testError
+#[test]
+fn test_error() {
+    for silent in [true, false] {
+        let jc = EvalContext::annotating();
+        let jexl = builder().strict(true).silent(silent).create();
+        let script = jexl.create_script("@error('42') { return 42; }").expect("parse");
+        match script.execute(jc.clone()) {
+            Err(x) => assert_eq!(x.get_annotation().as_deref(), Some("error"), "{}", x.message()),
+            Ok(v) => assert!(silent, "should have failed, got {:?}", v.java_to_string()),
+        }
+        assert_eq!(jc.count(), 1);
+        assert!(jc.names().contains("error"));
+        assert!(jc.names().contains("42"));
+    }
+}
