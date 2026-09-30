@@ -3447,6 +3447,33 @@ const MAP: &[Sig] = sigs!("java.util.Map";
     "values"() -> "java.util.Collection" = |o, _| Ok(Value::object(MapView::new(map_of(o), ViewKind::Values)));
     "entrySet"() -> "java.util.Set" = |o, _| Ok(Value::object(MapView::new(map_of(o), ViewKind::Entries)));
     "containsKey"("java.lang.Object") -> "boolean" = |o, a| boolean(map_of(o).contains_key(&a[0]));
+    // the Map defaults, as java.util.HashMap implements them
+    "getOrDefault"("java.lang.Object", "java.lang.Object") -> "java.lang.Object" =
+        |o, a| Ok(map_of(o).get(&a[0]).unwrap_or_else(|| a[1].clone()));
+    // a key mapped to null counts as absent
+    "putIfAbsent"("java.lang.Object", "java.lang.Object") -> "java.lang.Object" = |o, a| {
+        match map_of(o).get(&a[0]) {
+            Some(v) if !v.is_null() => Ok(v),
+            _ => map_put(o, a[0].clone(), a[1].clone()),
+        }
+    };
+    "replace"("java.lang.Object", "java.lang.Object") -> "java.lang.Object" = |o, a| {
+        if map_of(o).contains_key(&a[0]) {
+            map_put(o, a[0].clone(), a[1].clone())
+        } else {
+            Ok(Value::Null)
+        }
+    };
+    // Objects.equals(current, old), and an absent key never matches even when old is null
+    "replace"("java.lang.Object", "java.lang.Object", "java.lang.Object") -> "boolean" = |o, a| {
+        match map_of(o).get(&a[0]) {
+            Some(cur) if (cur.is_null() && a[1].is_null()) || cur.java_equals(&a[1]) => {
+                map_put(o, a[0].clone(), a[2].clone())?;
+                boolean(true)
+            }
+            _ => boolean(false),
+        }
+    };
     "containsValue"("java.lang.Object") -> "boolean" =
         |o, a| boolean(map_of(o).snapshot().iter().any(|(_, v)| v.java_equals(&a[0])));
     "clear"() -> "void" = |o, _| {
