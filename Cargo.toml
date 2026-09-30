@@ -8,6 +8,7 @@ description = "A faithful Rust port of Apache Commons JEXL 3.2.1, behaviorally c
 repository = "https://github.com/Junsung-Kim/rust-jexl3"
 homepage = "https://github.com/Junsung-Kim/rust-jexl3"
 readme = "README.md"
+documentation = "https://docs.rs/rust-jexl3"
 keywords = ["jexl", "expression", "script", "interpreter", "template"]
 categories = ["parser-implementations", "template-engine"]
 # The differential fixtures are 60MB of oracle output: they prove the port against the jar but

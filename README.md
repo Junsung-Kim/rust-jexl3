@@ -31,9 +31,7 @@ If you know the Java API, you already know this one; the names are the same, in 
 
 ```rust
 use std::sync::Arc;
-use rust_jexl3::jexl_context::{JexlContext, MapContext};
-use rust_jexl3::jexl_engine::JexlBuilder;
-use rust_jexl3::value::Value;
+use rust_jexl3::{JexlBuilder, JexlContext, MapContext, Value};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let jexl = JexlBuilder::new().strict(true).cache(512).create();
