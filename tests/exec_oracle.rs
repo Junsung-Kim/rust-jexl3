@@ -173,25 +173,27 @@ fn run_case(case: &Json) -> Json {
 fn execution_matches_oracle() {
     let cp = std::env::var("EXEC_CASES").unwrap_or_else(|_| "tests/data/exec/cases.jsonl".into());
     let ep = std::env::var("EXEC_EXPECTED").unwrap_or_else(|_| "tests/data/exec/expected.jsonl".into());
-    eprintln!("reading fixtures");
     let cases = std::fs::read_to_string(cp).expect("cases");
     let expected = std::fs::read_to_string(ep).expect("expected");
-    eprintln!("read {} / {} bytes", cases.len(), expected.len());
     let mut failures: Vec<String> = Vec::new();
     let mut n = 0usize;
     let mut skipped = 0usize;
-    eprintln!("loop start");
     let mut iter = 0usize;
     for (c, e) in cases.lines().zip(expected.lines()) {
         iter += 1;
-        if iter <= 40 {
-            eprintln!("iter {} parsing", iter);
-        }
         let case = json::parse(c).expect("case json");
         let want = json::parse(e).expect("expected json");
-        if iter <= 40 {
-            eprintln!("iter {} parsed", iter);
-        }
+        // The two files are written in lockstep, and a case the JVM could not finish still gets a
+        // line. If they ever drift, comparing the wrong pair is worse than stopping: a case whose
+        // expectation says "finished" but whose script loops forever would hang this test.
+        let (cid, wid) = (case.get("id").and_then(Json::string), want.get("id").and_then(Json::string));
+        assert!(
+            wid.is_none() || cid == wid,
+            "fixtures out of step at line {}: case {:?} against expectation {:?}",
+            iter,
+            cid,
+            wid
+        );
         // scripts the oracle could not finish (infinite loops) carry no comparable outcome
         if want.get("timeout").is_some() || want.get("harness_error").is_some() {
             skipped += 1;

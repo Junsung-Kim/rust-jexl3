@@ -23,6 +23,17 @@ Re-measure with the commands in [PROGRESS.md](PROGRESS.md).
 | `f61_1481` | `unsolvable function/method '?'` vs `'null'` | The method name Java reports when the call site has none. |
 | `f61_1686` | `input.next()` — Java raises a boolean-coercion error, the port a `NoSuchElementException` | Evaluation order inside a map literal used as the left of `\|`. |
 
+## A note on the oracle itself
+
+One upstream expression, `latch.release(); while(true);`, shows the oracle is not stateless: a
+fresh JVM times out on it (Java loops forever, and so does the port -- faithfully), while the same
+JVM part-way through a long run answers `variable 'latch' is undefined`. JEXL keeps engine state
+across parses on purpose -- the port reproduces the parser's state leak -- so an expectation
+recorded mid-run is not always reproducible on its own. Corpora are therefore generated through
+`tools/run_oracle.py`, which restarts the JVM around a wedged script and marks the case, and
+`tests/exec_oracle.rs` now refuses to compare a case against an expectation carrying a different
+id rather than drifting silently.
+
 ## Not comparable at all
 
 Three further cases differ only in the iteration order of a `java.util.HashMap` or `HashSet` that
