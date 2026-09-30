@@ -63,7 +63,7 @@ impl From<number::NumberFormatException> for ArithError {
     }
 }
 
-type R<T> = Result<T, ArithError>;
+pub(crate) type R<T> = Result<T, ArithError>;
 
 /// `NumberFormatException` whose message quotes the *original* Java String, not a lossy copy.
 fn nfe_units(e: number::NumberFormatException, s: &JString) -> ArithError {

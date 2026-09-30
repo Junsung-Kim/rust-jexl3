@@ -1703,6 +1703,84 @@ impl Interpreter {
         Ok(namespace)
     }
 
+    /// port of: Interpreter.CallDispatcher.isArithmeticMethod — `uberspect.getMethod(arithmetic, ...)`.
+    ///
+    /// Java reflects over the JexlArithmetic instance, so every public method of it is callable as
+    /// `x.empty()`, `x.size()`, `x.toBoolean()`, `a.add(b)` and so on. The signatures are the ones
+    /// `javap` reports for 3.2.1; all but a handful take Object, so the arity decides.
+    fn arithmetic_method(&self, name: &str, args: &[Value]) -> Option<R> {
+        let a = &self.arithmetic;
+        let b = |r: crate::jexl_arithmetic::R<bool>| Some(r.map(Value::Boolean).map_err(|e| self.bare(e)));
+        let ob = |r: crate::jexl_arithmetic::R<Option<bool>>| {
+            Some(r.map(|v| v.map(Value::Boolean).unwrap_or(Value::Null)).map_err(|e| self.bare(e)))
+        };
+        let v = |r: crate::jexl_arithmetic::R<Value>| Some(r.map_err(|e| self.bare(e)));
+        match (name, args.len()) {
+            ("empty", 1) => b(a.empty(&args[0])),
+            ("isEmpty", 1) => ob(a.is_empty(&args[0], None)),
+            ("isEmpty", 2) => match &args[1] {
+                Value::Boolean(d) => ob(a.is_empty(&args[0], Some(*d))),
+                Value::Null => ob(a.is_empty(&args[0], None)),
+                _ => None,
+            },
+            ("size", 1) => Some(
+                a.size(&args[0], None)
+                    .map(|v| v.map(Value::Integer).unwrap_or(Value::Null))
+                    .map_err(|e| self.bare(e)),
+            ),
+            ("size", 2) => match &args[1] {
+                Value::Integer(d) => Some(
+                    a.size(&args[0], Some(*d))
+                        .map(|v| v.map(Value::Integer).unwrap_or(Value::Null))
+                        .map_err(|e| self.bare(e)),
+                ),
+                _ => None,
+            },
+            ("toBoolean", 1) => b(a.to_boolean(&args[0])),
+            ("toInteger", 1) => Some(a.to_integer(&args[0]).map(Value::Integer).map_err(|e| self.bare(e))),
+            ("toLong", 1) => Some(a.to_long(&args[0]).map(Value::Long).map_err(|e| self.bare(e))),
+            ("toDouble", 1) => Some(a.to_double(&args[0]).map(Value::Double).map_err(|e| self.bare(e))),
+            ("toBigInteger", 1) => Some(a.to_big_integer(&args[0]).map(Value::big_integer).map_err(|e| self.bare(e))),
+            ("toBigDecimal", 1) => Some(a.to_big_decimal(&args[0]).map(Value::big_decimal).map_err(|e| self.bare(e))),
+            ("toString", 1) => Some(a.to_jstring(&args[0]).map(Value::String).map_err(|e| self.bare(e))),
+            ("negate", 1) => v(a.negate(&args[0])),
+            ("positivize", 1) => v(a.positivize(&args[0])),
+            ("complement", 1) => v(a.complement(&args[0])),
+            ("not", 1) | ("logicalNot", 1) => v(a.not(&args[0])),
+            ("narrow", 1) if args[0].is_number() => Some(Ok(a.narrow(&args[0]))),
+            ("add", 2) => v(a.add(&args[0], &args[1])),
+            ("subtract", 2) => v(a.subtract(&args[0], &args[1])),
+            ("multiply", 2) => v(a.multiply(&args[0], &args[1])),
+            ("divide", 2) => v(a.divide(&args[0], &args[1])),
+            ("mod", 2) => v(a.modulo(&args[0], &args[1])),
+            ("and", 2) | ("bitwiseAnd", 2) => v(a.and(&args[0], &args[1])),
+            ("or", 2) | ("bitwiseOr", 2) => v(a.or(&args[0], &args[1])),
+            ("xor", 2) | ("bitwiseXor", 2) => v(a.xor(&args[0], &args[1])),
+            ("equals", 2) => b(a.equals(&args[0], &args[1])),
+            ("lessThan", 2) => b(a.less_than(&args[0], &args[1])),
+            ("lessThanOrEqual", 2) => b(a.less_than_or_equal(&args[0], &args[1])),
+            ("greaterThan", 2) => b(a.greater_than(&args[0], &args[1])),
+            ("greaterThanOrEqual", 2) => b(a.greater_than_or_equal(&args[0], &args[1])),
+            ("contains", 2) => ob(a.contains(&args[0], &args[1])),
+            ("startsWith", 2) => ob(a.starts_with(&args[0], &args[1])),
+            ("endsWith", 2) => ob(a.ends_with(&args[0], &args[1])),
+            ("createRange", 2) => v(a.create_range(&args[0], &args[1]).map(Value::object)),
+            ("isStrict", 0) => Some(Ok(Value::Boolean(a.is_strict()))),
+            ("isNegateStable", 0) => Some(Ok(Value::Boolean(a.is_negate_stable()))),
+            ("isPositivizeStable", 0) => Some(Ok(Value::Boolean(a.is_positivize_stable()))),
+            ("getMathScale", 0) => Some(Ok(Value::Integer(a.get_math_scale()))),
+            _ => None,
+        }
+    }
+
+    /// An arithmetic failure escaping a *method* call is the raw throwable, not an operator error.
+    fn bare(&self, e: ArithError) -> JexlException {
+        match e {
+            ArithError::NullOperand => JexlException::java_msg("JexlArithmetic$NullOperand", None),
+            other => JexlException::java_msg(other.class_name(), other.message()),
+        }
+    }
+
     // port of: Interpreter.call
     fn call(&mut self, node: NodeRef<'_>, target: Value, functor: Callee<'_>, arg_node: NodeRef<'_>) -> R {
         self.cancel_check(node)?;
@@ -1768,6 +1846,16 @@ impl Interpreter {
                         if let Some(vm) = self.uberspect.get_method(&recv, name, &argv) {
                             return self.invoked(node, name, vm.invoke(&recv, &argv));
                         }
+                        // ...or an arithmetic function, with the target prepended: `x.empty()`
+                        // reaches JexlArithmetic.empty(Object).
+                        // ponytail: Java also tries isContextMethod(name, pargv) first; a context
+                        // here exposes no methods, so there is nothing to reflect over.
+                        let mut pargv = Vec::with_capacity(argv.len() + 1);
+                        pargv.push(target.clone());
+                        pargv.extend(argv.iter().cloned());
+                        if let Some(r) = self.arithmetic_method(name, &pargv) {
+                            return self.invoked(node, name, r);
+                        }
                     } else {
                         // a function call with no namespace: try the default namespace
                         let namespace = self.resolve_namespace(None, node)?;
@@ -1775,6 +1863,10 @@ impl Interpreter {
                             if let Some(vm) = self.uberspect.get_method(&namespace, name, &argv) {
                                 return self.invoked(node, name, vm.invoke(&namespace, &argv));
                             }
+                        }
+                        // ...then solve it as an arithmetic function
+                        if let Some(r) = self.arithmetic_method(name, &argv) {
+                            return self.invoked(node, name, r);
                         }
                     }
                 }
