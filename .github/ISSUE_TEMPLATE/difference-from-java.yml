@@ -1,0 +1,38 @@
+name: Behaves differently from Java JEXL
+description: rust-jexl3 gives a different result, type or exception than commons-jexl3-3.2.1.jar
+labels: [divergence]
+body:
+  - type: textarea
+    id: script
+    attributes:
+      label: Expression or script
+      description: Exactly as run. A reduced, synthetic case is best; please no private production data.
+      render: jexl
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Variables and engine options
+      description: Each variable's value and Java type (Integer vs Long matters), plus strict / silent / safe / namespaces.
+    validations:
+      required: true
+  - type: textarea
+    id: java
+    attributes:
+      label: What Java JEXL 3.2.1 returns
+      description: The value and its type, or the exception class and exact message.
+    validations:
+      required: true
+  - type: textarea
+    id: rust
+    attributes:
+      label: What rust-jexl3 returns
+    validations:
+      required: true
+  - type: textarea
+    id: oracle
+    attributes:
+      label: Oracle case (optional)
+      description: The case in the oracle's JSON format, if you ran it -- see CONTRIBUTING.md.
+      render: json

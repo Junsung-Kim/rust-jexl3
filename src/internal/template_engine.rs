@@ -592,12 +592,16 @@ impl TemplateEngine {
 
     /// port of: TemplateEngine.createExpression(JexlInfo, String).
     /// `Ok(None)` is Java's `null`: a silent engine logs the failure instead of throwing.
+    #[track_caller]
     pub fn create_expression(
         self: &Arc<Self>,
         info: Option<JexlInfo>,
         expression: &JString,
     ) -> Result<Option<Arc<TemplateExpression>>, JexlException> {
-        let info = info.unwrap_or_else(|| self.params.jexl.create_info());
+        let info = match info {
+            Some(info) => info,
+            None => self.params.jexl.create_info(),
+        };
         let cached = self.cache.lock().unwrap_or_else(|p| p.into_inner()).get(expression);
         if let Some(stmt) = cached {
             return Ok(Some(stmt));
@@ -824,6 +828,7 @@ impl TemplateEngine {
     }
 
     /// port of: TemplateEngine.createTemplate(JexlInfo, String, Reader, String...)
+    #[track_caller]
     pub fn create_template(
         self: &Arc<Self>,
         info: Option<JexlInfo>,

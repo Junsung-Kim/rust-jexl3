@@ -1,5 +1,9 @@
 # rust-jexl3
 
+[![ci](https://github.com/Junsung-Kim/rust-jexl3/actions/workflows/ci.yml/badge.svg)](https://github.com/Junsung-Kim/rust-jexl3/actions/workflows/ci.yml)
+[![MSRV 1.80](https://img.shields.io/badge/MSRV-1.80-blue)](Cargo.toml)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 A Rust port of [Apache Commons JEXL](https://commons.apache.org/proper/commons-jexl/) **3.2.1**,
 behaviorally compatible with the Java library: the same grammar, the same results, the same result
 *types*, the same side effects, and the same exception messages.
@@ -48,6 +52,27 @@ assert!(matches!(script.execute(context)?, Value::Boolean(true)));
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
+## Using your own types
+
+Java JEXL reaches an object's properties and methods by reflection. Rust has none, so your type
+tells the engine what it offers, through the same `JexlUberspect` SPI Java uses: implement
+`HostIntrospector` and install it next to the modelled JDK. [`examples/host_object.rs`](examples/host_object.rs)
+is a complete, runnable one -- properties, a setter and a method on a Rust struct:
+
+```sh
+cargo run --example host_object
+```
+
+The JDK types scripts commonly touch -- `String`, the boxed numbers, `BigInteger`/`BigDecimal`,
+`StringBuilder`, `List`/`Set`/`Map` and their views, iterators, `Class` -- are modelled already, so
+`name.length()`, `list.size()` or `map.keySet()` work as in Java.
+
+## Untrusted input
+
+JEXL 3.2.1's parser backtracks exponentially on deeply nested unterminated literals, and a script
+can loop forever; the port keeps both behaviours. `rust_jexl3::guard::nesting_depth` bounds the
+first before you parse, and a cancellable engine bounds the second. See [SECURITY.md](SECURITY.md).
+
 ## Why it behaves the way it does
 
 JEXL's value is its lenient arithmetic, and that is where ports usually drift:
@@ -85,9 +110,6 @@ So parsing is on a par or far faster, and **evaluation is still 1.7-4x slower** 
 JVM. It was 3-7x before a first profiling pass; what remains is locking on variable access, and
 the plan for it is in [PROGRESS.md](PROGRESS.md).
 
-JEXL's parser backtracks exponentially on deeply nested unterminated literals, in Java as well as
-here; bound the size of untrusted input.
-
 ## Trust
 
 Every behaviour here is checked against the real `commons-jexl3-3.2.1.jar`, case by case, in
@@ -95,6 +117,12 @@ committed fixtures that `cargo test` replays without a JVM. The few known differ
 with their reasons in [MISMATCHES.md](MISMATCHES.md); the test fails on any difference that is not
 listed, and on a listed one that has been fixed. `sh tools/verify.sh --full` adds a fresh
 8,000-case sample against the jar.
+
+## Contributing
+
+Differences from Java JEXL are the most valuable report: [CONTRIBUTING.md](CONTRIBUTING.md) shows
+how to pin one down against the jar. This project follows the
+[Contributor Covenant](CODE_OF_CONDUCT.md).
 
 ## Publishing
 

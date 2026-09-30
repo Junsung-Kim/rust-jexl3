@@ -1,0 +1,14 @@
+name: Other bug or request
+description: A crash, a panic, an API question or a feature request
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, or what you need
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Code, the rust-jexl3 version, and the Rust version.

@@ -138,24 +138,28 @@ pub struct JexlScript {
 
 impl JexlEngine {
     /// port of: JexlEngine.createExpression(JexlInfo, String)
+    #[track_caller]
     pub fn create_expression(self: &Arc<Self>, info: Option<JexlInfo>, expression: &str) -> Result<JexlScript, JexlException> {
         let features = self.expression_features.clone();
         self.create_script_features(features, info, expression, None)
     }
 
     /// port of: JexlEngine.createScript(String)
+    #[track_caller]
     pub fn create_script(self: &Arc<Self>, script_text: &str) -> Result<JexlScript, JexlException> {
         let features = self.script_features.clone();
         self.create_script_features(features, None, script_text, None)
     }
 
     /// port of: JexlEngine.createScript(String, String...)
+    #[track_caller]
     pub fn create_script_named(self: &Arc<Self>, script_text: &str, names: &[String]) -> Result<JexlScript, JexlException> {
         let features = self.script_features.clone();
         self.create_script_features(features, None, script_text, Some(names))
     }
 
     /// port of: JexlEngine.createScript(JexlInfo, String, String...)
+    #[track_caller]
     pub fn create_script_info(
         self: &Arc<Self>,
         info: Option<JexlInfo>,
@@ -167,6 +171,7 @@ impl JexlEngine {
     }
 
     /// port of: Engine.createScript(JexlFeatures, JexlInfo, String, String[])
+    #[track_caller]
     pub fn create_script_features(
         self: &Arc<Self>,
         features: JexlFeatures,
@@ -175,7 +180,13 @@ impl JexlEngine {
         names: Option<&[String]>,
     ) -> Result<JexlScript, JexlException> {
         let source = crate::internal::engine::trim_source(script_text);
-        let parsed = self.parse(info, &features, &source, names)?;
+        // port of: `info == null ? createInfo() : info` -- called directly, not through a closure,
+        // so the location is the caller's: a closure does not carry #[track_caller]
+        let info = match info {
+            Some(info) => info,
+            None => self.create_info(),
+        };
+        let parsed = self.parse(Some(info), &features, &source, names)?;
         Ok(JexlScript { engine: self.clone(), source: Some(source), parsed, frame: None, engine_ref: std::sync::OnceLock::new() })
     }
 
@@ -207,6 +218,7 @@ impl JexlEngine {
 
     /// port of: Engine.createInfo() — `new JexlInfo()` when debugging, null otherwise. A null
     /// info would make `TemplateEngine.parseExpression` throw, so the zero info stands in for it.
+    #[track_caller]
     pub(crate) fn create_info(&self) -> JexlInfo {
         if self.debug {
             JexlInfo::from_caller()

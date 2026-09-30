@@ -3,6 +3,7 @@
 //! Every module names the Java class it ports on its first line; method names are the Java ones
 //! in snake_case. Behavior is defined by the 3.2.1 jar, not by this code: see PROGRESS.md for the
 //! differential harness that proves it.
+pub mod guard;
 pub mod internal;
 pub mod java;
 pub mod introspection;

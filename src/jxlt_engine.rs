@@ -69,6 +69,7 @@ pub fn exception(info: Option<JexlInfo>, msg: &str, cause: Option<JexlException>
 
 impl TemplateEngine {
     /// port of: JxltEngine.createExpression(String)
+    #[track_caller]
     pub fn create_expression_str(
         self: &Arc<Self>,
         expression: &str,
@@ -77,6 +78,7 @@ impl TemplateEngine {
     }
 
     /// port of: JxltEngine.createTemplate(JexlInfo, String, String...)
+    #[track_caller]
     pub fn create_template_info(
         self: &Arc<Self>,
         info: Option<JexlInfo>,
@@ -87,6 +89,7 @@ impl TemplateEngine {
     }
 
     /// port of: JxltEngine.createTemplate(String, String...)
+    #[track_caller]
     pub fn create_template_str(
         self: &Arc<Self>,
         source: &str,

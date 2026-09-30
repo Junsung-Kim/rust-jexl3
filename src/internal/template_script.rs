@@ -41,6 +41,7 @@ fn null_expression() -> JexlException {
 
 impl TemplateScript {
     /// port of: TemplateScript(TemplateEngine, JexlInfo, String, Reader, String...)
+    #[track_caller]
     pub fn new(
         engine: &Arc<TemplateEngine>,
         info: Option<JexlInfo>,
@@ -82,7 +83,10 @@ impl TemplateScript {
             }
         }
         let jexl = engine.get_engine();
-        let info = info.unwrap_or_else(|| jexl.create_info());
+        let info = match info {
+            Some(info) => info,
+            None => jexl.create_info(),
+        };
         // allow lambda defining params
         let mut scopes = Scopes::new();
         let scope = parms.map(|p| scopes.create(None, Some(p)));
