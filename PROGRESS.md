@@ -29,7 +29,7 @@ Method: TDD. Each subsystem: oracle-derived cases / ported upstream tests commit
 | JexlScript API (getParsedText, toString, getUnboundParameters, curry, callable) | 2,977 cases, **3 differ** | `cargo test --test exec_oracle script_api` |
 | upstream test suite | **352 of 678 `@Test` ported, 0 failing** | `cargo test --test upstream_arithmetic --test upstream_literals --test upstream_statements --test upstream_lexical --test upstream_engine` |
 | consumer-profile suite | 4,000 cases, **1 differs** | `tools/gen_profile_cases.py`, replayed through `exec_oracle` |
-| private corpus (15,453 production expressions, never committed) | replays clean through `exec_oracle`; see `tools/gen_private_cases.py` | |
+| private corpus (15,453 production expressions, never committed) | **GREEN** — 15,453 cases, 0 mismatches, 0 JVM restarts | `tools/gen_private_cases.py`, replayed through `exec_oracle` |
 | JexlArithmetic (+ IntegerRange/LongRange) | GREEN | `cargo test --test arith_oracle` 12,000 CI cases; local 150,000-case campaign 0 mismatches |
 
 ### Parser mismatch ledger (see MISMATCHES.md)

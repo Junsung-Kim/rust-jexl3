@@ -38,6 +38,11 @@ fuzz_target!(|data: &str| {
     if data.len() > 2048 {
         return;
     }
+    // JEXL 3.2.1's parser backtracks exponentially on deeply nested unterminated literals, in Java
+    // as much as here (see COMPATIBILITY.md); skip those so the fuzzer keeps moving.
+    if data.bytes().filter(|b| matches!(b, b'{' | b'[' | b'(')).count() > 6 {
+        return;
+    }
     let engine = rust_jexl::jexl_engine::JexlBuilder::new()
         .debug(true)
         .cache(0)
