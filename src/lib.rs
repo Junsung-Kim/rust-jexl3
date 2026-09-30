@@ -14,5 +14,6 @@ pub mod jexl_features;
 pub mod jexl_info;
 pub mod jexl_operator;
 pub mod jexl_options;
+pub mod jxlt_engine;
 pub mod parser;
 pub mod value;

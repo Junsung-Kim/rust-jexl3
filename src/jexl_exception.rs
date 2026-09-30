@@ -231,7 +231,17 @@ impl JexlException {
 
     // port of: JxltEngine.Exception(JexlInfo, String, Throwable)
     pub fn jxlt(info: Option<JexlInfo>, msg: &str, cause: Option<JexlException>) -> Self {
-        Self::build(ExceptionKind::Jxlt, None, info, Some(JString::from(msg)), cause)
+        Self::jxlt_msg(info, &JString::from(msg), cause)
+    }
+
+    /// `jxlt` with a UTF-16 message: a unified expression's text can hold lone surrogates.
+    pub fn jxlt_msg(info: Option<JexlInfo>, msg: &JString, cause: Option<JexlException>) -> Self {
+        Self::build(ExceptionKind::Jxlt, None, info, Some(msg.clone()), cause)
+    }
+
+    /// Whether this is a `JxltEngine.Exception` (the only kind `evalIdentifier` catches).
+    pub fn is_jxlt(&self) -> bool {
+        matches!(self.kind, ExceptionKind::Jxlt)
     }
 
     // port of: JexlException.methodSignature

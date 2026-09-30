@@ -202,7 +202,16 @@ fn execution_matches_oracle() {
             eprintln!("case {} {}", n, case.get("id").and_then(Json::string).unwrap_or_default());
         }
         let got = common::normalize(&run_case(&case));
+        // only the ops the case asked the oracle for are comparable
+        let ops: Vec<String> = case
+            .get("ops")
+            .and_then(Json::arr)
+            .map(|a| a.iter().filter_map(Json::string).collect())
+            .unwrap_or_else(|| vec!["vars".into(), "exec".into(), "ctx".into()]);
         for field in ["parse", "vars", "result", "error", "ctx"] {
+            if matches!(field, "vars" | "ctx") && !ops.iter().any(|o| o == field) {
+                continue;
+            }
             let w = want.get(field).map(common::normalize);
             let g = got.get(field).cloned();
             if w != g {

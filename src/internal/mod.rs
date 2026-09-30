@@ -9,4 +9,8 @@ pub mod operators;
 pub mod interpreter;
 pub mod range;
 pub mod script;
+pub mod template_debugger;
+pub mod template_engine;
+pub mod template_interpreter;
+pub mod template_script;
 pub mod scope;

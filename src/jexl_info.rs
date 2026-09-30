@@ -61,8 +61,18 @@ impl JexlInfo {
     }
 
     // port of: JexlInfo.detach / JexlNode.Info.detach
+    // `JexlNode.Info.detach()` returns `node.jexlInfo()`, not a copy of itself: a template
+    // sub-expression parsed with a JexlNode.Info therefore carries the *node's* position.
     pub fn detach(&self) -> JexlInfo {
+        if let Some(n) = &self.node {
+            return n.node().jexl_info().unwrap_or_else(|| JexlInfo::new(None, 0, 0));
+        }
         JexlInfo { node: None, ..self.clone() }
+    }
+
+    // port of: JexlNode.Info(JexlNode, JexlInfo)
+    pub(crate) fn with_node(&self, node: crate::parser::jexl_node::NodeHandle) -> JexlInfo {
+        JexlInfo { node: Some(node), ..self.clone() }
     }
 }
 

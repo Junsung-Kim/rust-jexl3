@@ -21,7 +21,7 @@ pub fn pragmas_as_map(pragmas: &BTreeMap<JString, Value>) -> JMap {
 }
 
 /// Characters java.lang.Character.isSpaceChar accepts (measured on JDK 25).
-fn is_space_char(c: u16) -> bool {
+pub(crate) fn is_space_char(c: u16) -> bool {
     matches!(c, 0x0020 | 0x00a0 | 0x1680 | 0x2000..=0x200a | 0x2028 | 0x2029 | 0x202f | 0x205f | 0x3000)
 }
 

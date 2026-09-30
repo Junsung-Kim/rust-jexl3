@@ -58,6 +58,9 @@ pub const TRY_FAILED: TryFailedRef = TryFailedRef;
 
 /// The engine state an interpreter needs (the fields `Engine` exposes to `InterpreterBase`).
 pub struct EngineRef {
+    /// the engine itself: `Engine.jxlt()` needs the parser and the features, which the fields
+    /// below do not carry (`Interpreter.jexl` is the Engine in Java).
+    pub engine: Arc<crate::jexl_engine::JexlEngine>,
     pub uberspect: Arc<dyn JexlUberspect>,
     pub arithmetic: JexlArithmetic,
     pub functions: HashMap<String, Value>,
@@ -129,6 +132,16 @@ impl Interpreter {
             fp: 0,
             tmpl: None,
         }
+    }
+
+    /// `accept` for the TemplateInterpreter overrides (see `internal::template_interpreter`)
+    pub(crate) fn accept_node(&mut self, node: NodeRef<'_>, data: Option<&Value>) -> R {
+        self.accept(node, data)
+    }
+
+    /// `cancelCheck` for the TemplateInterpreter overrides
+    pub(crate) fn cancel_check_node(&mut self, node: NodeRef<'_>) -> Result<(), JexlException> {
+        self.cancel_check(node)
     }
 
     pub(crate) fn handle(&self, node: NodeRef<'_>) -> NodeHandle {
@@ -207,7 +220,7 @@ impl Interpreter {
     }
 
     // port of: InterpreterBase.unsolvableProperty
-    fn unsolvable_property(&self, node: NodeRef<'_>, property: &str, undef: bool, cause: Option<JexlException>) -> R {
+    pub(crate) fn unsolvable_property(&self, node: NodeRef<'_>, property: &str, undef: bool, cause: Option<JexlException>) -> R {
         if self.is_strict_engine() && !node.is_ternary_protected() {
             return Err(JexlException::property(Some(self.handle(node)), property, undef, cause));
         }
@@ -959,6 +972,11 @@ impl Interpreter {
 
     // port of: Interpreter.visit(ASTJexlScript)
     fn visit_script(&mut self, node: NodeRef<'_>, data: Option<&Value>) -> R {
+        if !(node.is(JJTJEXLLAMBDA) && !node.is_top_level()) {
+            if let Some(r) = crate::internal::template_interpreter::visit_script(self, node, data) {
+                return r;
+            }
+        }
         if node.is(JJTJEXLLAMBDA) && !node.is_top_level() {
             let frame = node
                 .script()
@@ -1550,7 +1568,7 @@ impl Interpreter {
     }
 
     // port of: Interpreter.visit(ASTArguments)
-    fn visit_arguments(&mut self, node: NodeRef<'_>, data: Option<&Value>) -> Result<Vec<Value>, JexlException> {
+    pub(crate) fn visit_arguments(&mut self, node: NodeRef<'_>, data: Option<&Value>) -> Result<Vec<Value>, JexlException> {
         let argc = node.num_children();
         let mut argv = Vec::with_capacity(argc);
         for i in 0..argc {

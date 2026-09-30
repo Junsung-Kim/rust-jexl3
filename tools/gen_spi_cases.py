@@ -65,7 +65,7 @@ ARGS = [
 # the receivers: one per Java type the protocol can encode
 TARGETS = {
     "String": [ST(""), ST("Hello"), ST("a,b"), ST("한글 😀"), ST("  hi "), ST("\ud83d"),
-               ST("😀")],
+               ST("😀"), ST("𐐀"), ST("a\ud83db")],
     "Character": [CH("a"), CH("5"), CH("가"), CH(" ")],
     "Boolean": [B(True), B(False)],
     "Byte": [BY(1), BY(-128)],
@@ -114,7 +114,8 @@ STRING = {
     "equalsIgnoreCase": [(ST("HELLO"),), (ST("\ud83d\ude00"),), (ST("\ud801\udc28"),)],
     "compareTo": [(ST("Hello"),), (ST("a"),)],
     "compareToIgnoreCase": [(ST("HELLO"),), (ST("\ud83d\ude00"),), (ST("\ud83d"),), (ST("stra\u00dfe"),),
-                            (ST("\ud83d\udc00"),), (ST("\ud83d\ude00x"),)],
+                            (ST("\ud83d\udc00"),), (ST("\ud83d\ude00x"),), (ST("\ud801\udc28"),),
+                            (ST("\ud801\udc00"),)],
     "toUpperCase": [()], "toLowerCase": [()],
     "trim": [()], "strip": [()], "stripLeading": [()], "stripTrailing": [()],
     "replace": [(CH("l"), CH("L")), (ST("l"), ST("L")), (ST(""), ST("-")), (ST("Hello"), ST(""))],
@@ -129,7 +130,7 @@ STRING = {
                       (B(True), IN(0), ST("\ud83d\ude00"), IN(0), IN(2)), (IN(0), ST("x"), IN(0), IN(9))],
     "valueOf": [(IN(3),), (LO(3),), (DO("1.5"),), (B(True),), (CH("a"),), (NULL,), (ST("x"),)],
     "join": [(ST("-"), ST("a"), ST("b")), (ST("-"),), (ST("-"), ST("a")), (ST("-"), LI(ST("a"), ST("b"))),
-             (ST("-"), LI()), (NULL, LI(ST("a")))],
+             (ST("-"), LI()), (NULL, LI(ST("a"))), (ST("-"), LI(IN(1))), (ST("-"), LI(NULL, ST("a")))],
 }
 
 NUMBER = {
@@ -160,7 +161,8 @@ FLOATING = {
     "parseDouble": [(ST("4.2"),), (ST("x"),)], "parseFloat": [(ST("4.2"),)],
     "valueOf": [(ST("4.2"),), (DO("1.5"),)],
     "toString": [(DO("1.5"),)],
-    "compare": [(DO("1"), DO("2")), (FL("1"), FL("2")), (FL("NaN"), FL("1"))],
+    "compare": [(DO("1"), DO("2")), (FL("1"), FL("2")), (FL("NaN"), FL("1")), (FL("2"), FL("1")),
+                (DO("2"), DO("1"))],
     "max": [(DO("1"), DO("2")), (DO("NaN"), DO("1")), (DO("1"), DO("NaN")), (DO("-0.0"), DO("0.0")),
             (DO("0.0"), DO("-0.0")), (FL("1"), FL("2")), (FL("NaN"), FL("1")), (FL("-0.0"), FL("0.0"))],
     "min": [(DO("1"), DO("2")), (DO("NaN"), DO("1")), (DO("1"), DO("NaN")), (DO("-0.0"), DO("0.0")),
@@ -212,7 +214,8 @@ BIGDECIMAL = {
     "negate": [()], "abs": [()], "pow": [(IN(2),), (IN(-1),)],
     "scale": [()], "precision": [()], "signum": [()], "unscaledValue": [()],
     "stripTrailingZeros": [()], "toPlainString": [()], "toBigInteger": [()],
-    "movePointLeft": [(IN(1),)], "movePointRight": [(IN(1),)],
+    "movePointLeft": [(IN(1),), (IN(-2147483648),), (IN(2147483647),)],
+    "movePointRight": [(IN(1),), (IN(2147483647),), (IN(-2147483648),)],
     "setScale": [(IN(0),), (IN(4),), (IN(0), IN(4)), (IN(0), IN(7)), (IN(0), IN(99)), (IN(1), IN(2)),
                  (IN(1), IN(3)), (IN(1), IN(0)), (IN(1), IN(1)), (IN(1), IN(5)), (IN(1), IN(6))],
     "compareTo": [(BD("1.5"),)], "min": [(BD("1"),)], "max": [(BD("1"),)], "ulp": [()],
@@ -363,7 +366,10 @@ def main():
         for target in targets:
             for name in PROPERTY_NAMES:
                 emit(op="get", target=target, name=name)
-                emit(op="set", target=target, name=name, args=[rng.choice(SET_VALUES)])
+                # an array stores by component type, so every value kind is worth trying
+                values = SET_VALUES if cls == "Array" else [rng.choice(SET_VALUES)]
+                for v in values:
+                    emit(op="set", target=target, name=name, args=[v])
 
     # iterate
     for targets in TARGETS.values():

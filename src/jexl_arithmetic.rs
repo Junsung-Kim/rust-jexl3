@@ -86,11 +86,27 @@ fn npe_get_class() -> ArithError {
 }
 
 /// The message of the implicit checkcast in `Comparable<Object>.compareTo`.
-// ponytail: both classes are assumed to be in java.base; a host object would read differently.
+///
+/// The JVM names the module and loader of both classes: the JDK's own live in `java.base` under
+/// the bootstrap loader, anything else in the unnamed module under the application loader.
 fn cce(from: &str, to: &str) -> ArithError {
+    fn where_of(c: &str) -> String {
+        if c.starts_with("java.") || c.starts_with("javax.") || c.starts_with("jdk.") {
+            format!("{} is in module java.base of loader 'bootstrap'", c)
+        } else {
+            format!("{} is in unnamed module of loader 'app'", c)
+        }
+    }
+    let detail = if where_of(from).ends_with("'bootstrap'") == where_of(to).ends_with("'bootstrap'")
+        && where_of(from).contains("java.base")
+    {
+        format!("{} and {} are in module java.base of loader 'bootstrap'", from, to)
+    } else {
+        format!("{}; {}", where_of(from), where_of(to))
+    };
     ArithError::ClassCast(JString::from(format!(
-        "class {} cannot be cast to class {} ({} and {} are in module java.base of loader 'bootstrap')",
-        from, to, from, to
+        "class {} cannot be cast to class {} ({})",
+        from, to, detail
     )))
 }
 

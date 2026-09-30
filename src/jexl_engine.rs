@@ -156,6 +156,16 @@ impl JexlEngine {
         Ok(parsed)
     }
 
+    /// port of: Engine.createInfo() — `new JexlInfo()` when debugging, null otherwise. A null
+    /// info would make `TemplateEngine.parseExpression` throw, so the zero info stands in for it.
+    pub(crate) fn create_info(&self) -> JexlInfo {
+        if self.debug {
+            JexlInfo::from_caller()
+        } else {
+            JexlInfo::new(None, 0, 0)
+        }
+    }
+
     /// port of: Engine.options(null, JexlContext) — the options with no script to take pragmas
     /// from (what `TemplateEngine.TemplateExpression.options` uses).
     pub(crate) fn options_no_script(&self, context: &dyn JexlContext) -> JexlOptions {
@@ -301,8 +311,9 @@ impl JexlEngine {
         opts
     }
 
-    pub(crate) fn engine_ref(&self, options: &JexlOptions) -> Arc<EngineRef> {
+    pub(crate) fn engine_ref(self: &Arc<Self>, options: &JexlOptions) -> Arc<EngineRef> {
         Arc::new(EngineRef {
+            engine: self.clone(),
             uberspect: self.uberspect.clone(),
             arithmetic: self.arithmetic.clone(),
             functions: self.functions.clone(),
@@ -383,6 +394,7 @@ pub fn empty_context() -> Arc<dyn JexlContext> {
 /// port of: org.apache.commons.jexl3.JexlBuilder
 pub struct JexlBuilder {
     uberspect: Option<Arc<dyn JexlUberspect>>,
+    sandbox: Option<crate::introspection::jexl_sandbox::JexlSandbox>,
     arithmetic: Option<JexlArithmetic>,
     features: Option<JexlFeatures>,
     options: JexlOptions,
@@ -408,6 +420,7 @@ impl JexlBuilder {
     pub fn new() -> JexlBuilder {
         JexlBuilder {
             uberspect: None,
+            sandbox: None,
             arithmetic: None,
             features: None,
             options: JexlOptions::new(),
@@ -423,6 +436,12 @@ impl JexlBuilder {
 
     pub fn uberspect(mut self, u: Arc<dyn JexlUberspect>) -> Self {
         self.uberspect = Some(u);
+        self
+    }
+
+    // port of: JexlBuilder.sandbox
+    pub fn sandbox(mut self, box_: crate::introspection::jexl_sandbox::JexlSandbox) -> Self {
+        self.sandbox = Some(box_);
         self
     }
     pub fn arithmetic(mut self, a: JexlArithmetic) -> Self {
@@ -525,6 +544,11 @@ impl JexlBuilder {
         let expression_features = features.clone().script(false);
         let script_features = features.script(true);
         let uberspect = self.uberspect.unwrap_or_else(|| Arc::new(Uberspect::new()));
+        // port of: Engine(JexlBuilder) — a sandbox wraps the uberspect
+        let uberspect: Arc<dyn JexlUberspect> = match &self.sandbox {
+            Some(sb) => Arc::new(crate::introspection::jexl_sandbox::SandboxUberspect::new(uberspect, sb)),
+            None => uberspect,
+        };
         Arc::new(JexlEngine {
             uberspect,
             arithmetic,

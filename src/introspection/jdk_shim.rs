@@ -2391,7 +2391,10 @@ const STRING: &[Sig] = sigs!("java.lang.String";
         if n == 0 || u.is_empty() {
             return jstring(JString::empty());
         }
-        if i32::MAX / n < u.len() as i32 {
+        // String.repeat's count guard, then the array limit of the coder the result would use
+        // (StringUTF16.MAX_LENGTH is Integer.MAX_VALUE >> 1)
+        let limit = if is_latin1(u.units()) { i32::MAX as i64 } else { (i32::MAX >> 1) as i64 };
+        if i32::MAX / n < u.len() as i32 || u.len() as i64 * n as i64 > limit {
             return jthrow("java.lang.OutOfMemoryError", "Required length exceeds implementation limit");
         }
         let mut out: Vec<u16> = Vec::with_capacity(u.len() * n as usize);
@@ -2962,7 +2965,9 @@ const BIGDECIMAL: &[Sig] = sigs!("java.math.BigDecimal";
     "movePointLeft"("int") -> "java.math.BigDecimal" = |o, a| {
         let x = arg_bigdec(o);
         let new_scale = x.scale() as i64 + arg_i64(&a[0]);
-        ten_power_ok(-new_scale)?;
+        if let Some(v) = ten_power_ok(&x, -new_scale, new_scale.max(0))? {
+            return Ok(v);
+        }
         match x.move_point_left(arg_i32(&a[0])) {
             Ok(v) => Ok(Value::big_decimal(v)),
             Err(e) => math(e),
@@ -2971,7 +2976,9 @@ const BIGDECIMAL: &[Sig] = sigs!("java.math.BigDecimal";
     "movePointRight"("int") -> "java.math.BigDecimal" = |o, a| {
         let x = arg_bigdec(o);
         let new_scale = x.scale() as i64 - arg_i64(&a[0]);
-        ten_power_ok(-new_scale)?;
+        if let Some(v) = ten_power_ok(&x, -new_scale, new_scale.max(0))? {
+            return Ok(v);
+        }
         match x.move_point_right(arg_i32(&a[0])) {
             Ok(v) => Ok(Value::big_decimal(v)),
             Err(e) => math(e),
@@ -2980,7 +2987,10 @@ const BIGDECIMAL: &[Sig] = sigs!("java.math.BigDecimal";
     "setScale"("int", "int") -> "java.math.BigDecimal" = |o, a| {
         let mode = rounding_mode(arg_i32(&a[1]))?;
         let x = arg_bigdec(o);
-        ten_power_ok(arg_i64(&a[0]) - x.scale() as i64)?;
+        let new_scale = arg_i64(&a[0]);
+        if let Some(v) = ten_power_ok(&x, new_scale - x.scale() as i64, new_scale)? {
+            return Ok(v);
+        }
         match x.set_scale(arg_i32(&a[0]), mode) {
             Ok(v) => Ok(Value::big_decimal(v)),
             Err(e) => math(e),
@@ -2999,8 +3009,14 @@ const BIGDECIMAL: &[Sig] = sigs!("java.math.BigDecimal";
     "divide"("java.math.BigDecimal", "int", "int") -> "java.math.BigDecimal" = |o, a| {
         nn(&a[0])?;
         let mode = rounding_mode(arg_i32(&a[2]))?;
-        ten_power_ok(arg_i64(&a[1]))?;
-        match arg_bigdec(o).divide_scale(&arg_bigdec(&a[0]), arg_i32(&a[1]), mode) {
+        let x = arg_bigdec(o);
+        let scale = arg_i64(&a[1]);
+        if arg_bigdec(&a[0]).signum() != 0 {
+            if let Some(v) = ten_power_ok(&x, scale - x.scale() as i64, scale)? {
+                return Ok(v);
+            }
+        }
+        match x.divide_scale(&arg_bigdec(&a[0]), arg_i32(&a[1]), mode) {
             Ok(v) => Ok(Value::big_decimal(v)),
             Err(e) => math(e),
         }
@@ -3021,7 +3037,10 @@ const BIGDECIMAL: &[Sig] = sigs!("java.math.BigDecimal";
     "sqrt"("java.math.MathContext") -> "java.math.BigDecimal" = context_arg;
     "setScale"("int") -> "java.math.BigDecimal" = |o, a| {
         let x = arg_bigdec(o);
-        ten_power_ok(arg_i64(&a[0]) - x.scale() as i64)?;
+        let new_scale = arg_i64(&a[0]);
+        if let Some(v) = ten_power_ok(&x, new_scale - x.scale() as i64, new_scale)? {
+            return Ok(v);
+        }
         match x.set_scale(arg_i32(&a[0]), RoundingMode::Unnecessary) {
             Ok(v) => Ok(Value::big_decimal(v)),
             Err(e) => math(e),
@@ -3048,11 +3067,16 @@ fn context_arg(_obj: &Value, _args: &[Value]) -> Result<Value, JexlException> {
 /// guard lives here (see COMPATIBILITY.md).
 const MAX_TEN_POWER: i64 = 646_456_993;
 
-fn ten_power_ok(n: i64) -> Result<(), JexlException> {
-    if n > MAX_TEN_POWER {
-        return arithmetic("BigInteger would overflow supported range").map(|_: Value| ());
+/// Zero needs no magnitude at all, so Java never overflows on it: the caller gets the answer
+/// straight back (`BigDecimal(0, scale)`) instead of the error.
+fn ten_power_ok(x: &BigDecimal, n: i64, scale: i64) -> Result<Option<Value>, JexlException> {
+    if n <= MAX_TEN_POWER {
+        return Ok(None);
     }
-    Ok(())
+    if x.signum() == 0 {
+        return Ok(Some(Value::big_decimal(BigDecimal::new(BigInt::zero(), scale.clamp(0, i32::MAX as i64) as i32))));
+    }
+    arithmetic("BigInteger would overflow supported range").map(|_: Value| None)
 }
 
 /// port of: RoundingMode.valueOf(int) as BigDecimal's legacy int overloads use it
@@ -4022,10 +4046,16 @@ mod tests {
         assert!(matches!(m.try_invoke("get", &list, &[Value::string("x")]), Ok(TryResult::Failed)));
         assert_eq!(m.return_type().as_deref(), Some("java.lang.Object"));
         assert!(m.is_cacheable());
+        // JexlMethod::invoke packs a trailing vararg itself when the caller did not
+        let text = Value::string("x");
+        let join = s.get_method(&text, "join", &[Value::string("-"), Value::string("a")]).expect("join");
+        let joined = join.invoke(&text, &[Value::string("-"), Value::string("a")]).unwrap();
+        assert_eq!(joined.java_to_string(), "a");
 
         let g = s.get_property_get(&list, &Value::Integer(0)).expect("list get");
         assert!(matches!(g.try_invoke(&list, &Value::Integer(1)), Ok(TryResult::Value(_))));
         assert!(matches!(g.try_invoke(&list, &Value::string("x")), Ok(TryResult::Failed)));
+        assert!(g.is_cacheable());
 
         // a bean getter (isEmpty) and the map/list executors all cache and retry
         let bean = s

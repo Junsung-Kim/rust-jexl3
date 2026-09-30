@@ -161,11 +161,12 @@ impl HostIntrospector for TestHosts {
                         Ok(Value::string(&parts.join("|")))
                     },
                 },
-                ("isIpv4", 1) => HostMethod {
+                // these three declare a String parameter: nothing else is applicable
+                ("isIpv4", 1) if is_string_arg(&args[0]) => HostMethod {
                     ret: "boolean", call: |_, a| Ok(Value::Boolean(ip_version(&a[0].java_to_string()) == 4)) },
-                ("isIpv6", 1) => HostMethod {
+                ("isIpv6", 1) if is_string_arg(&args[0]) => HostMethod {
                     ret: "boolean", call: |_, a| Ok(Value::Boolean(ip_version(&a[0].java_to_string()) == 6)) },
-                ("getIpVersion", 1) => HostMethod {
+                ("getIpVersion", 1) if is_string_arg(&args[0]) => HostMethod {
                     ret: "int", call: |_, a| Ok(Value::Integer(ip_version(&a[0].java_to_string()))) },
                 ("size", _) => HostMethod {
                     ret: "int", call: |_, a| Ok(Value::Integer(a.len() as i32)) },
