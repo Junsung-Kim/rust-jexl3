@@ -4,7 +4,7 @@
 //! Strings are processed as UTF-16 code units (like Java's `charAt`); error messages that echo a
 //! string containing a lone surrogate use U+FFFD for it.
 use num_bigint::{BigInt, Sign};
-use num_traits::Zero;
+use num_traits::{ToPrimitive, Zero};
 
 /// `java.lang.NumberFormatException`; the payload is `getMessage()`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1342,3 +1342,20 @@ static G: [(i64, i64); 617] = [
     (0x4fd5_679e_fb9b_04d8, 0x5dec_6458_6315_3a6c), // 291
     (0x7fbb_d8fe_5f5e_6e27, 0x497a_3a27_04ee_c3df), // 292
 ];
+
+// port of: java.math.BigInteger.intValue — the low-order 32 bits, two's complement
+pub fn big_integer_int_value(b: &BigInt) -> i32 {
+    let masked = b & BigInt::from(0xffff_ffffu32);
+    masked.to_u32().unwrap_or(0) as i32
+}
+
+// port of: java.math.BigInteger.longValue — the low-order 64 bits, two's complement
+pub fn big_integer_long_value(b: &BigInt) -> i64 {
+    let masked = b & BigInt::from(u64::MAX);
+    masked.to_u64().unwrap_or(0) as i64
+}
+
+// port of: java.math.BigInteger.doubleValue — correctly rounded (the decimal form is exact)
+pub fn big_integer_double_value(b: &BigInt) -> f64 {
+    parse_double(&b.to_string()).unwrap_or(f64::NAN)
+}

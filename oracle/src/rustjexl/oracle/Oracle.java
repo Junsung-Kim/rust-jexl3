@@ -246,6 +246,10 @@ public final class Oracle {
                     }
                     break;
                 }
+                case "arith": {
+                    r.put("result", arith(kase));
+                    break;
+                }
                 case "tokens": {
                     r.put("tokens", tokens(src, Boolean.TRUE.equals(kase.get("registers"))));
                     break;
@@ -424,6 +428,106 @@ public final class Oracle {
         }
         out.add(kids);
         return out;
+    }
+
+    // ---------------------------------------------------------------- JexlArithmetic probes
+
+    private static final List<String> UNARY = java.util.Arrays.asList(
+        "negate", "positivize", "complement", "not", "empty", "isEmpty", "size", "toBoolean", "toInteger",
+        "toLong", "toDouble", "toBigInteger", "toBigDecimal", "toString", "narrow", "isFloatingPointNumber",
+        "isNumberable", "isFloatingPoint");
+    private static final List<String> BINARY = java.util.Arrays.asList(
+        "add", "subtract", "multiply", "divide", "mod", "and", "or", "xor", "equals", "lessThan", "greaterThan",
+        "lessThanOrEqual", "greaterThanOrEqual", "contains", "startsWith", "endsWith", "createRange");
+
+    @SuppressWarnings("unchecked")
+    static Object arith(Map<String, Object> kase) {
+        Map<String, Object> ac = (Map<String, Object>) kase.get("arith");
+        boolean strict = ac == null || !ac.containsKey("strict") || (Boolean) ac.get("strict");
+        MathContext mc = mathContext(ac == null ? null : ac.get("mathContext"));
+        int scale = ac != null && ac.containsKey("mathScale") ? Integer.parseInt(ac.get("mathScale").toString()) : Integer.MIN_VALUE;
+        JexlArithmetic a = new JexlArithmetic(strict, mc, scale);
+        String op = (String) kase.get("op");
+        Object[] args = args((List<Object>) kase.get("args"));
+        try {
+            Object v;
+            if (UNARY.contains(op)) {
+                switch (op) {
+                    case "negate": v = a.negate(args[0]); break;
+                    case "positivize": v = a.positivize(args[0]); break;
+                    case "complement": v = a.complement(args[0]); break;
+                    case "not": v = a.not(args[0]); break;
+                    case "empty": v = a.empty(args[0]); break;
+                    case "isEmpty": v = a.isEmpty(args[0]); break;
+                    case "size": v = a.size(args[0]); break;
+                    case "toBoolean": v = a.toBoolean(args[0]); break;
+                    case "toInteger": v = a.toInteger(args[0]); break;
+                    case "toLong": v = a.toLong(args[0]); break;
+                    case "toDouble": v = a.toDouble(args[0]); break;
+                    case "toBigInteger": v = a.toBigInteger(args[0]); break;
+                    case "toBigDecimal": v = a.toBigDecimal(args[0]); break;
+                    case "toString": v = a.toString(args[0]); break;
+                    case "narrow": v = a.narrow((Number) args[0]); break;
+                    case "isFloatingPointNumber": v = callProtected(a, "isFloatingPointNumber", args[0]); break;
+                    case "isNumberable": v = callProtected(a, "isNumberable", args[0]); break;
+                    default: v = callProtected(a, "isFloatingPoint", args[0]); break;
+                }
+            } else if (BINARY.contains(op)) {
+                switch (op) {
+                    case "add": v = a.add(args[0], args[1]); break;
+                    case "subtract": v = a.subtract(args[0], args[1]); break;
+                    case "multiply": v = a.multiply(args[0], args[1]); break;
+                    case "divide": v = a.divide(args[0], args[1]); break;
+                    case "mod": v = a.mod(args[0], args[1]); break;
+                    case "and": v = a.and(args[0], args[1]); break;
+                    case "or": v = a.or(args[0], args[1]); break;
+                    case "xor": v = a.xor(args[0], args[1]); break;
+                    case "equals": v = a.equals(args[0], args[1]); break;
+                    case "lessThan": v = a.lessThan(args[0], args[1]); break;
+                    case "greaterThan": v = a.greaterThan(args[0], args[1]); break;
+                    case "lessThanOrEqual": v = a.lessThanOrEqual(args[0], args[1]); break;
+                    case "greaterThanOrEqual": v = a.greaterThanOrEqual(args[0], args[1]); break;
+                    case "contains": v = a.contains(args[0], args[1]); break;
+                    case "startsWith": v = a.startsWith(args[0], args[1]); break;
+                    case "endsWith": v = a.endsWith(args[0], args[1]); break;
+                    default: return rangeToList(a.createRange(args[0], args[1]));
+                }
+            } else {
+                throw new IllegalArgumentException("unknown arith op " + op);
+            }
+            return encode(v);
+        } catch (RuntimeException xany) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("throw", error(xany));
+            return m;
+        }
+    }
+
+    static Object callProtected(JexlArithmetic a, String name, Object arg) {
+        try {
+            java.lang.reflect.Method m = JexlArithmetic.class.getDeclaredMethod(name, Object.class);
+            m.setAccessible(true);
+            return m.invoke(a, arg);
+        } catch (ReflectiveOperationException x) {
+            throw new IllegalStateException(x);
+        }
+    }
+
+    /** The range object plus the values it iterates (identity toString is nondeterministic). */
+    static Object rangeToList(Iterable<?> range) {
+        List<Object> l = new ArrayList<>();
+        int n = 0;
+        for (Object o : range) {
+            l.add(o);
+            if (++n > 64) break;
+        }
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("t", "RangeValues");
+        m.put("c", className(range.getClass()));
+        List<Object> enc = new ArrayList<>();
+        for (Object o : l) enc.add(encode(o));
+        m.put("v", enc);
+        return m;
     }
 
     static List<Object> strings(String[] s) {

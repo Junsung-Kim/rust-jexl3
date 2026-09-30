@@ -42,8 +42,8 @@ fn nfe(e: number::NumberFormatException) -> JexlException {
 
 fn math(e: crate::java::big_decimal::MathError) -> JexlException {
     match e {
-        crate::java::big_decimal::MathError::NumberFormat(m) => JexlException::java("java.lang.NumberFormatException", Some(m)),
-        crate::java::big_decimal::MathError::Arithmetic(m) => JexlException::java("java.lang.ArithmeticException", Some(m)),
+        crate::java::big_decimal::MathError::NumberFormat(m) => JexlException::java_msg("java.lang.NumberFormatException", Some(m)),
+        crate::java::big_decimal::MathError::Arithmetic(m) => JexlException::java_msg("java.lang.ArithmeticException", Some(m)),
     }
 }
 

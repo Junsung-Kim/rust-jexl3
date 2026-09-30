@@ -14,7 +14,7 @@ use num_bigint::BigInt;
 use crate::java::big_decimal::BigDecimal;
 use crate::java::hash_map::{JHashMap, JHashSet, JavaHash};
 use crate::java::number;
-use crate::java::string::JString;
+use crate::java::string::{JString, JStringBuilder};
 
 /// A Java value.
 #[derive(Clone)]
@@ -559,65 +559,7 @@ impl Value {
 
     /// String.valueOf(Object) / Object.toString()
     pub fn java_to_string(&self) -> String {
-        match self {
-            Value::Null => "null".into(),
-            Value::Boolean(b) => b.to_string(),
-            Value::Byte(b) => b.to_string(),
-            Value::Short(s) => s.to_string(),
-            Value::Integer(i) => i.to_string(),
-            Value::Long(l) => l.to_string(),
-            Value::Float(f) => number::float_to_string(*f),
-            Value::Double(d) => number::double_to_string(*d),
-            Value::Character(c) => String::from_utf16_lossy(&[*c]),
-            Value::String(s) => s.to_rust(),
-            Value::BigInteger(b) => b.to_string(),
-            Value::BigDecimal(b) => b.to_java_string(),
-            Value::AtomicBoolean(a) => a.load(AtomicOrdering::SeqCst).to_string(),
-            Value::Array(a) => format!("{}@{:x}", self.class_name(), a.addr() as u32),
-            Value::List(l) => {
-                let items = l.snapshot();
-                let parts: Vec<String> = items
-                    .iter()
-                    .map(|e| match e {
-                        Value::List(x) if x.ptr_eq(l) => "(this Collection)".to_string(),
-                        _ => e.java_to_string(),
-                    })
-                    .collect();
-                format!("[{}]", parts.join(", "))
-            }
-            Value::Set(s) => {
-                let items = s.snapshot();
-                let parts: Vec<String> = items
-                    .iter()
-                    .map(|e| match e {
-                        Value::Set(x) if x.ptr_eq(s) => "(this Collection)".to_string(),
-                        _ => e.java_to_string(),
-                    })
-                    .collect();
-                format!("[{}]", parts.join(", "))
-            }
-            Value::Map(m) => {
-                let parts: Vec<String> = m
-                    .snapshot()
-                    .iter()
-                    .map(|(k, v)| {
-                        let ks = match k {
-                            Value::Map(x) if x.ptr_eq(m) => "(this Map)".to_string(),
-                            _ => k.java_to_string(),
-                        };
-                        let vs = match v {
-                            Value::Map(x) if x.ptr_eq(m) => "(this Map)".to_string(),
-                            _ => v.java_to_string(),
-                        };
-                        format!("{}={}", ks, vs)
-                    })
-                    .collect();
-                format!("{{{}}}", parts.join(", "))
-            }
-            Value::Object(o) => o
-                .java_to_string()
-                .unwrap_or_else(|| format!("{}@{:x}", o.class_name(), Arc::as_ptr(o) as *const () as usize as u32)),
-        }
+        self.java_to_jstring().to_rust()
     }
 
     /// Whether java_to_string() would print an identity hash (nondeterministic in Java).
@@ -629,14 +571,85 @@ impl Value {
         }
     }
 
-    /// The UTF-16 toString (keeps lone surrogates of strings/chars).
+    /// Object.toString() as a Java String (UTF-16, so lone surrogates survive).
     pub fn java_to_jstring(&self) -> JString {
         match self {
-            Value::String(s) => s.clone(),
+            Value::Null => JString::from("null"),
+            Value::Boolean(b) => JString::from(b.to_string()),
+            Value::Byte(b) => JString::from(b.to_string()),
+            Value::Short(s) => JString::from(s.to_string()),
+            Value::Integer(i) => JString::from(i.to_string()),
+            Value::Long(l) => JString::from(l.to_string()),
+            Value::Float(f) => JString::from(number::float_to_string(*f)),
+            Value::Double(d) => JString::from(number::double_to_string(*d)),
             Value::Character(c) => JString::from_units(&[*c]),
-            _ => JString::from(self.java_to_string()),
+            Value::String(s) => s.clone(),
+            Value::BigInteger(b) => JString::from(b.to_string()),
+            Value::BigDecimal(b) => JString::from(b.to_java_string()),
+            Value::AtomicBoolean(a) => JString::from(a.load(AtomicOrdering::SeqCst).to_string()),
+            Value::Array(a) => JString::from(format!("{}@{:x}", self.class_name(), a.addr() as u32)),
+            Value::List(l) => {
+                let mut b = JStringBuilder::new();
+                b.str("[");
+                for (n, e) in l.snapshot().iter().enumerate() {
+                    if n > 0 {
+                        b.str(", ");
+                    }
+                    match e {
+                        Value::List(x) if x.ptr_eq(l) => b.str("(this Collection)"),
+                        _ => b.jstr(&e.java_to_jstring()),
+                    };
+                }
+                b.str("]").build()
+            }
+            Value::Set(s) => {
+                let mut b = JStringBuilder::new();
+                b.str("[");
+                for (n, e) in s.snapshot().iter().enumerate() {
+                    if n > 0 {
+                        b.str(", ");
+                    }
+                    match e {
+                        Value::Set(x) if x.ptr_eq(s) => b.str("(this Collection)"),
+                        _ => b.jstr(&e.java_to_jstring()),
+                    };
+                }
+                b.str("]").build()
+            }
+            Value::Map(m) => {
+                let mut b = JStringBuilder::new();
+                b.str("{");
+                for (n, (k, v)) in m.snapshot().iter().enumerate() {
+                    if n > 0 {
+                        b.str(", ");
+                    }
+                    match k {
+                        Value::Map(x) if x.ptr_eq(m) => b.str("(this Map)"),
+                        _ => b.jstr(&k.java_to_jstring()),
+                    };
+                    b.str("=");
+                    match v {
+                        Value::Map(x) if x.ptr_eq(m) => b.str("(this Map)"),
+                        _ => b.jstr(&v.java_to_jstring()),
+                    };
+                }
+                b.str("}").build()
+            }
+            Value::Object(o) => JString::from(o.java_to_string().unwrap_or_else(|| {
+                format!("{}@{:x}", o.class_name(), Arc::as_ptr(o) as *const () as usize as u32)
+            })),
         }
     }
+}
+
+/// Float.floatToRawIntBits: the exact bit pattern (NaN sign and payload preserved)
+pub fn float_raw_bits(f: f32) -> u32 {
+    f.to_bits()
+}
+
+/// Double.doubleToRawLongBits
+pub fn double_raw_bits(d: f64) -> u64 {
+    d.to_bits()
 }
 
 pub fn float_bits(f: f32) -> u32 {

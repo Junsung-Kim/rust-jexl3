@@ -7,6 +7,7 @@
 //! `Result<_, MathError>`; the infallible convenience methods (`add`, `subtract`, `multiply`,
 //! `strip_trailing_zeros`, `to_big_integer`) have `try_*` twins that report Java's exception.
 use crate::java::number::{big_integer_hash_code, char_digit, double_to_string};
+use crate::java::string::{JString, JStringBuilder};
 use num_bigint::{BigInt, BigUint, Sign};
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
@@ -97,18 +98,20 @@ impl fmt::Display for MathContext {
 /// payload is `getMessage()`; a `null` message (e.g. `new BigDecimal("")`) is the empty string.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MathError {
-    Arithmetic(String),
-    NumberFormat(String),
+    Arithmetic(JString),
+    NumberFormat(JString),
 }
 
 type R = Result<BigDecimal, MathError>;
 
 fn arith<T>(m: &str) -> Result<T, MathError> {
-    Err(MathError::Arithmetic(m.into()))
+    let m: String = m.into();
+    Err(MathError::Arithmetic(JString::from(m)))
 }
 
 fn number_format<T>(m: impl Into<String>) -> Result<T, MathError> {
-    Err(MathError::NumberFormat(m.into()))
+    let m: String = m.into();
+    Err(MathError::NumberFormat(JString::from(m)))
 }
 
 /// `java.math.BigDecimal`: `unscaled × 10^-scale`.
@@ -297,14 +300,24 @@ impl BigDecimal {
     }
 
     /// `new BigDecimal(String)`.
+    /// new BigDecimal(String) over UTF-16 units (the Java String the caller really has)
+    pub fn parse_units(u: &[u16]) -> R {
+        Self::parse_units_with(u, &MathContext::UNLIMITED)
+    }
+
     pub fn parse(s: &str) -> R {
         Self::parse_with(s, &MathContext::UNLIMITED)
     }
 
-    /// `new BigDecimal(String, MathContext)` (`BigDecimal(char[], int, int, MathContext)`).
+    /// `new BigDecimal(String, MathContext)` over a Rust string.
     pub fn parse_with(s: &str, mc: &MathContext) -> R {
         let u: Vec<u16> = s.encode_utf16().collect();
-        let first = *u.first().ok_or_else(|| MathError::NumberFormat(String::new()))?;
+        Self::parse_units_with(&u, mc)
+    }
+
+    /// `new BigDecimal(String, MathContext)` (`BigDecimal(char[], int, int, MathContext)`).
+    pub fn parse_units_with(u: &[u16], mc: &MathContext) -> R {
+        let first = *u.first().ok_or_else(|| MathError::NumberFormat(JString::empty()))?;
         let mut i = 0;
         let isneg = first == b'-' as u16;
         if isneg || first == b'+' as u16 {
@@ -336,9 +349,12 @@ impl BigDecimal {
                 scl -= parse_exp(&u, i)?;
                 break;
             } else if compact {
-                let c = String::from_utf16_lossy(&[c]);
-                return number_format(format!(
-                    "Character {c} is neither a decimal digit number, decimal point, nor \"e\" notation exponential mark."
+                return Err(MathError::NumberFormat(
+                    JStringBuilder::new()
+                        .str("Character ")
+                        .units(&[c])
+                        .str(" is neither a decimal digit number, decimal point, nor \"e\" notation exponential mark.")
+                        .build(),
                 ));
             } else {
                 return number_format("Character array is missing \"e\" notation exponential mark.");
@@ -1120,7 +1136,7 @@ fn decimal_digit(c: u16) -> Option<u8> {
 
 /// `BigDecimal.parseExp`: `e` is the index of the 'e'/'E'; consumes the rest of the input.
 fn parse_exp(u: &[u16], e: usize) -> Result<i64, MathError> {
-    let null = || MathError::NumberFormat(String::new());
+    let null = || MathError::NumberFormat(JString::empty());
     let mut off = e + 1;
     let mut len = u.len() as i64 - off as i64;
     let mut c = *u.get(off).ok_or_else(null)?;

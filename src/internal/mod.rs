@@ -2,4 +2,5 @@
 pub mod debugger;
 pub mod engine;
 pub mod lexical_scope;
+pub mod range;
 pub mod scope;

@@ -103,7 +103,12 @@ impl JexlException {
 
     /// A raw Java throwable (not a JexlException subclass in Java).
     pub fn java(class: &str, message: Option<String>) -> Self {
-        Self::build(ExceptionKind::Java { class: class.to_string() }, None, None, message.map(JString::from), None)
+        Self::java_msg(class, message.map(JString::from))
+    }
+
+    /// A raw Java throwable whose message is already a Java String.
+    pub fn java_msg(class: &str, message: Option<JString>) -> Self {
+        Self::build(ExceptionKind::Java { class: class.to_string() }, None, None, message, None)
     }
 
     /// A raw Java throwable with a cause.

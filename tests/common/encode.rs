@@ -31,12 +31,12 @@ pub fn encode(v: &Value) -> Json {
         Value::Double(d) => with(
             typed("Double", Some(Json::str(&v.java_to_string()))),
             "bits",
-            Json::str(&format!("{:x}", rust_jexl::value::double_bits(*d))),
+            Json::str(&format!("{:x}", rust_jexl::value::double_raw_bits(*d))),
         ),
         Value::Float(f) => with(
             typed("Float", Some(Json::str(&v.java_to_string()))),
             "bits",
-            Json::str(&format!("{:x}", rust_jexl::value::float_bits(*f))),
+            Json::str(&format!("{:x}", rust_jexl::value::float_raw_bits(*f))),
         ),
         Value::Character(c) => typed("Character", Some(Json::Str(vec![*c]))),
         Value::String(s) => typed("String", Some(Json::Str(s.units().to_vec()))),

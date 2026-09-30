@@ -5,6 +5,7 @@
 //! differential harness that proves it.
 pub mod internal;
 pub mod java;
+pub mod jexl_arithmetic;
 pub mod jexl_exception;
 pub mod jexl_features;
 pub mod jexl_info;
