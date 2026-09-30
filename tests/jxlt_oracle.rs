@@ -6,11 +6,11 @@
 //! Fixtures (`tools/gen_jxlt_cases.py`, replayed through the oracle with `tools/run_oracle.py`):
 //!  * `tests/data/jxlt/cases.jsonl` / `expected.jsonl` — `kind: "jxlt"` and `kind: "template"`.
 //!  * `tests/data/jxlt/api_cases.jsonl` / `api_expected.jsonl` — written by
-//!    `tests/data/jxlt/gen/JxltGen.java`, which lives in the library's own package so it can
-//!    reach what the oracle protocol cannot: `Expression.prepare()`, `Expression.getSource()`,
-//!    `Expression.toString()`, `Template.toString()`, custom directive prefixes / expression
-//!    characters, `createJxltEngine(noScript, cacheSize, immediate, deferred)` and
-//!    `TemplateDebugger`.
+//!    `tests/data/jxlt/gen/JxltGen.java` (run `tools/gen_jxlt_api.sh`), which drives the jar
+//!    through what the one-shot oracle protocol cannot express: `Expression.prepare()`,
+//!    `Expression.getSource()`, `Expression.toString()`, `Template.toString()`, custom directive
+//!    prefixes / expression characters, `createJxltEngine(noScript, cacheSize, immediate,
+//!    deferred)` and `TemplateDebugger`.
 mod common;
 
 use std::collections::HashMap;

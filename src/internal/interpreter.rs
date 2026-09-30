@@ -315,7 +315,7 @@ impl Interpreter {
         }
         if symbol >= 0 {
             let frame = match &self.frame {
-                None => return Err(npe_frame_has()),
+                None => return Err(npe_frame("has(int)", "frame")),
                 Some(f) => f,
             };
             {
@@ -924,7 +924,7 @@ impl Interpreter {
         let symbol = identifier.get_symbol();
         if !self.options.is_lexical() {
             let frame = match &self.frame {
-                None => return Err(npe_frame_has()),
+                None => return Err(npe_frame("has(int)", "this.frame")),
                 Some(f) => f,
             };
             {
@@ -938,8 +938,9 @@ impl Interpreter {
         } else if !self.define_variable(&identifier) {
             return self.redefined_variable(node, &JString::from(identifier.get_name()));
         }
-        if let Some(frame) = &self.frame {
-            frame.set(symbol as usize, Slot::Value(Value::Null));
+        match &self.frame {
+            None => return Err(npe_frame("set(int, Object)", "this.frame")),
+            Some(frame) => frame.set(symbol as usize, Slot::Value(Value::Null)),
         }
         Ok(Value::Null)
     }
@@ -982,7 +983,12 @@ impl Interpreter {
                 .script()
                 .and_then(|s| s.get_scope())
                 .and_then(|scope| create_frame(&self.ast.scopes_ref(), scope, self.frame.as_ref(), None));
-            return Ok(Value::object(Closure::new(self.ast.clone(), node.id, frame)));
+            // a lambda a TemplateInterpreter evaluates is an anonymous Closure subclass in Java
+            return Ok(Value::object(if self.tmpl.is_some() {
+                Closure::from_template(self.ast.clone(), node.id, frame)
+            } else {
+                Closure::new(self.ast.clone(), node.id, frame)
+            }));
         }
         let argc = node.get_scope().map(|s| s.get_arg_count()).unwrap_or(0);
         let saved = self.block.take();
@@ -1110,8 +1116,11 @@ impl Interpreter {
                 cnt += 1;
                 if symbol < 0 {
                     self.set_context_variable(node, loop_variable.get_name(), value)?;
-                } else if let Some(frame) = &self.frame {
-                    frame.set(symbol as usize, Slot::Value(value));
+                } else {
+                    match &self.frame {
+                        None => return Err(npe_frame("set(int, Object)", "this.frame")),
+                        Some(frame) => frame.set(symbol as usize, Slot::Value(value)),
+                    }
                 }
                 if let Some(statement) = statement {
                     match self.accept(statement, data) {
@@ -1432,8 +1441,9 @@ impl Interpreter {
                             return Ok(this_self);
                         }
                     }
-                    if let Some(frame) = &self.frame {
-                        frame.set(symbol as usize, Slot::Value(right.clone()));
+                    match &self.frame {
+                        None => return Err(npe_frame("set(int, Object)", "this.frame")),
+                        Some(frame) => frame.set(symbol as usize, Slot::Value(right.clone())),
                     }
                     if let Some(closure) = right.as_host::<Closure>() {
                         closure.set_captured(&self.ast, symbol, right.clone());
@@ -1833,11 +1843,19 @@ fn is_arithmetic_throwable(e: &JexlException) -> bool {
         if class == "java.lang.ArithmeticException" || class == "JexlArithmetic$NullOperand")
 }
 
-/// The JDK's helpful NullPointerException when a script with no scope reads a register.
-fn npe_frame_has() -> JexlException {
+/// The JDK's helpful NullPointerException when a script with no scope touches a register.
+/// `receiver` is how the JDK names the null reference: `frame` for InterpreterBase.getVariable's
+/// parameter, `this.frame` everywhere the interpreter reads its own field.
+fn npe_frame(method: &str, receiver: &str) -> JexlException {
     JexlException::java(
         "java.lang.NullPointerException",
-        Some("Cannot invoke \"org.apache.commons.jexl3.internal.Frame.has(int)\" because \"frame\" is null".into()),
+        Some(
+            format!(
+                "Cannot invoke \"org.apache.commons.jexl3.internal.Frame.{}\" because \"{}\" is null",
+                method, receiver
+            )
+            .into(),
+        ),
     )
 }
 
