@@ -1,0 +1,13 @@
+# Cases whose Java answer is not reproducible, so there is nothing to compare against.
+#
+# Each renders a java.util.HashSet or HashMap holding a value with no hashCode override -- a bean,
+# a Pattern, an Object[] -- inside a string (a result or an exception message). Java orders such a
+# collection by identity hash, which it picks per object, per run: two runs of the Java program
+# disagree with each other. Where the collection is a structured result instead of text,
+# tests/common/mod.rs::normalize compares it without its order, and it is not listed here.
+#
+# id         what is rendered in hash order
+f31_2701     HashSet{Bean, 1.5f, 10} inside a JXLT result string
+f31_2931     HashSet{String, Pattern, Boolean} inside an ArithmeticException message
+f31_3744     HashMap with a Pattern key inside an ArithmeticException message
+f61_1765     HashMap with an Object[] key inside an ArithmeticException message

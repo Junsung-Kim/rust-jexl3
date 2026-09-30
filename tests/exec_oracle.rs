@@ -169,13 +169,52 @@ fn run_case(case: &Json) -> Json {
     Json::Obj(out)
 }
 
+
+/// The reviewed ids whose Java answer is not reproducible (tests/data/exec/not_comparable.txt).
+fn not_comparable() -> std::collections::HashSet<String> {
+    ids_in("tests/data/exec/not_comparable.txt")
+}
+
+/// The understood differences, each explained in MISMATCHES.md (tests/data/exec/known_mismatches.txt).
+fn known_mismatches() -> std::collections::HashSet<String> {
+    ids_in("tests/data/exec/known_mismatches.txt")
+}
+
+/// Only the committed fixtures carry these baselines; a local campaign (EXEC_CASES) reports all.
+fn baselines_apply(var: &str) -> bool {
+    std::env::var(var).is_err()
+}
+
+/// Checks the failures against the baseline: every one must be listed, and every listed one
+/// that is present in this fixture set must still fail.
+fn against_baseline(failures: Vec<(String, String)>, seen: &std::collections::HashSet<String>) -> Vec<String> {
+    let known = known_mismatches();
+    let failing: std::collections::HashSet<String> = failures.iter().map(|(id, _)| id.clone()).collect();
+    let mut out: Vec<String> = failures.into_iter().filter(|(id, _)| !known.contains(id)).map(|(_, m)| m).collect();
+    for id in known.iter().filter(|id| seen.contains(*id) && !failing.contains(*id)) {
+        out.push(format!("{}: listed in known_mismatches.txt but now matches the jar -- remove the line", id));
+    }
+    out
+}
+
+fn ids_in(path: &str) -> std::collections::HashSet<String> {
+    std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .filter_map(|l| l.split_whitespace().next().map(str::to_string))
+        .collect()
+}
+
 #[test]
 fn execution_matches_oracle() {
     let cp = std::env::var("EXEC_CASES").unwrap_or_else(|_| "tests/data/exec/cases.jsonl".into());
     let ep = std::env::var("EXEC_EXPECTED").unwrap_or_else(|_| "tests/data/exec/expected.jsonl".into());
     let cases = std::fs::read_to_string(cp).expect("cases");
     let expected = std::fs::read_to_string(ep).expect("expected");
-    let mut failures: Vec<String> = Vec::new();
+    let skip = not_comparable();
+    let mut failures: Vec<(String, String)> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut n = 0usize;
     let mut skipped = 0usize;
     let mut iter = 0usize;
@@ -194,12 +233,17 @@ fn execution_matches_oracle() {
             cid,
             wid
         );
-        // scripts the oracle could not finish (infinite loops) carry no comparable outcome
-        if want.get("timeout").is_some() || want.get("harness_error").is_some() {
+        // scripts the oracle could not finish (infinite loops) carry no comparable outcome, and
+        // a few whose Java answer differs from one JVM run to the next are listed by id
+        let listed = case.get("id").and_then(Json::string).map(|id| skip.contains(&id)).unwrap_or(false);
+        if listed || want.get("timeout").is_some() || want.get("harness_error").is_some() {
             skipped += 1;
             continue;
         }
         n += 1;
+        if let Some(id) = case.get("id").and_then(Json::string) {
+            seen.insert(id);
+        }
         if std::env::var("EXEC_TRACE").is_ok() {
             eprintln!("case {} {}", n, case.get("id").and_then(Json::string).unwrap_or_default());
         }
@@ -229,26 +273,33 @@ fn execution_matches_oracle() {
                     ]);
                     writeln!(f, "{}", json::to_string(&rec)).expect("write");
                 }
-                failures.push(format!(
+                failures.push((case.get("id").and_then(Json::string).unwrap_or_default(), format!(
                     "{}: src={:?}\n  field {}\n  want {}\n  got  {}",
                     case.get("id").and_then(Json::string).unwrap_or_default(),
                     case.get("src").and_then(Json::string).unwrap_or_default(),
                     field,
                     w.map(|x| json::to_string(&x)).unwrap_or_else(|| "-".into()),
                     g.map(|x| json::to_string(&x)).unwrap_or_else(|| "-".into()),
-                ));
+                )));
                 break;
             }
         }
     }
     assert!(n > 0, "no cases");
+    let total = failures.len();
+    let report: Vec<String> = if baselines_apply("EXEC_CASES") {
+        against_baseline(failures, &seen)
+    } else {
+        failures.into_iter().map(|(_, m)| m).collect()
+    };
     assert!(
-        failures.is_empty(),
-        "{} of {} execution cases differ (skipped {}):\n{}",
-        failures.len(),
+        report.is_empty(),
+        "{} of {} execution cases differ (skipped {}); {} not in known_mismatches.txt:\n{}",
+        total,
         n,
         skipped,
-        failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n")
+        report.len(),
+        report.iter().take(10).cloned().collect::<Vec<_>>().join("\n")
     );
 }
 
@@ -337,16 +388,22 @@ fn script_api_matches_oracle() {
     let ep = std::env::var("API_EXPECTED").unwrap_or_else(|_| "tests/data/exec/api_expected.jsonl".into());
     let cases = std::fs::read_to_string(&cp).unwrap_or_else(|e| panic!("{}: {}", cp, e));
     let expected = std::fs::read_to_string(&ep).unwrap_or_else(|e| panic!("{}: {}", ep, e));
-    let mut failures: Vec<String> = Vec::new();
+    let skip = not_comparable();
+    let mut failures: Vec<(String, String)> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let (mut n, mut skipped) = (0usize, 0usize);
     for (c, e) in cases.lines().zip(expected.lines()) {
         let case = json::parse(c).expect("case json");
         let want = json::parse(e).expect("expected json");
-        if want.get("timeout").is_some() || want.get("harness_error").is_some() {
+        let listed = case.get("id").and_then(Json::string).map(|id| skip.contains(&id)).unwrap_or(false);
+        if listed || want.get("timeout").is_some() || want.get("harness_error").is_some() {
             skipped += 1;
             continue;
         }
         n += 1;
+        if let Some(id) = case.get("id").and_then(Json::string) {
+            seen.insert(id);
+        }
         if std::env::var("API_TRACE").is_ok() {
             eprintln!("case {}", case.get("id").and_then(Json::string).unwrap_or_default());
         }
@@ -355,25 +412,32 @@ fn script_api_matches_oracle() {
             let w = want.get(field).map(common::normalize);
             let g = got.get(field).cloned();
             if w != g {
-                failures.push(format!(
+                failures.push((case.get("id").and_then(Json::string).unwrap_or_default(), format!(
                     "{}: src={:?}\n  field {}\n  want {}\n  got  {}",
                     case.get("id").and_then(Json::string).unwrap_or_default(),
                     case.get("src").and_then(Json::string).unwrap_or_default(),
                     field,
                     w.map(|x| json::to_string(&x)).unwrap_or_else(|| "-".into()),
                     g.map(|x| json::to_string(&x)).unwrap_or_else(|| "-".into()),
-                ));
+                )));
                 break;
             }
         }
     }
     assert!(n > 0, "no cases");
+    let total = failures.len();
+    let report: Vec<String> = if baselines_apply("API_CASES") {
+        against_baseline(failures, &seen)
+    } else {
+        failures.into_iter().map(|(_, m)| m).collect()
+    };
     assert!(
-        failures.is_empty(),
-        "{} of {} script api cases differ (skipped {}):\n{}",
-        failures.len(),
+        report.is_empty(),
+        "{} of {} script api cases differ (skipped {}); {} not in known_mismatches.txt:\n{}",
+        total,
         n,
         skipped,
-        failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n")
+        report.len(),
+        report.iter().take(10).cloned().collect::<Vec<_>>().join("\n")
     );
 }

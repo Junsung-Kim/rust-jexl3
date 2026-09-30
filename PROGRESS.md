@@ -22,11 +22,11 @@ Method: TDD. Each subsystem: oracle-derived cases / ported upstream tests commit
 | java.util.HashMap / HashSet order | GREEN | `cargo test --test java_hash_map` (6 tests, 20,700 JVM sequences) |
 | parser (Parser.jjt productions, JexlParser, FeatureController, getVariables) | GREEN | `cargo test --test parser_oracle` 8,000 cases, 0 mismatches |
 | Debugger (getParsedText, exception snippets) | GREEN | `cargo test --test debugger_oracle` 17,500 CI cases (8,000 parsed + 8,000 round-trip + 1,500 API over 19,927 nodes); local campaign 112,000+; llvm-cov 97.4% |
-| Interpreter, Operators, Engine, contexts, public API | 5,962 cases, **4 differ** (38 skipped: JVM timeout/OOM) | `cargo test --test exec_oracle` |
+| Interpreter, Operators, Engine, contexts, public API | 5,959 cases, **3 differ**, all listed in `known_mismatches.txt` (41 skipped: 38 JVM timeout/OOM, 3 not comparable) | `cargo test --test exec_oracle` |
 | java.util.regex | GREEN for the suites that use it | `cargo test --test java_regex` |
 | JDK shim (introspection) + JexlSandbox | GREEN | `cargo test --test spi_oracle` |
 | JXLT template engine (JxltEngine, TemplateEngine, TemplateInterpreter, TemplateDebugger) | GREEN | `cargo test --test jxlt_oracle`: 8,364 protocol cases + 1,917 API cases, 0 mismatches |
-| JexlScript API (getParsedText, toString, getUnboundParameters, curry, callable) | 2,977 cases, **3 differ** (2 are identity-hash ordering) | `cargo test --test exec_oracle script_api` |
+| JexlScript API (getParsedText, toString, getUnboundParameters, curry, callable) | 2,976 cases, **2 differ**, both listed | `cargo test --test exec_oracle script_api` |
 | upstream test suite | **352 of 678 `@Test` ported, 0 failing** | `cargo test --test upstream_arithmetic --test upstream_literals --test upstream_statements --test upstream_lexical --test upstream_engine` |
 | consumer-profile suite | 4,000 cases, **1 differs** | `tools/gen_profile_cases.py`, replayed through `exec_oracle` |
 | private corpus (15,453 production expressions, never committed) | **GREEN** — 15,453 cases, 0 mismatches, 0 JVM restarts | `tools/gen_private_cases.py`, replayed through `exec_oracle` |
@@ -107,14 +107,19 @@ EXEC_CASES=/tmp/priv.jsonl EXEC_EXPECTED=/tmp/priv_exp.jsonl cargo test --releas
 
 | script | parse (jar) | parse (port) | exec (jar) | exec (port) |
 |---|---|---|---|---|
-| `a.b > 1 && name == '한글'` | 138 ns | 120 ns | 317 ns | 976 ns |
-| `x * 3 + y / 2 - 1` | 32 ns | 105 ns | 141 ns | 711 ns |
-| `a.b == null \|\| (x > 10 ? 'big' : 'small') == 'small'` | 47 ns | 115 ns | 279 ns | 1045 ns |
-| `var t = 0; for (i : 1..20) { t = t + i * 2; } t` | 15179 ns | 118 ns | 1362 ns | 9646 ns |
+| `a.b > 1 && name == '한글'` | 136 ns | 121 ns | 316 ns | 535 ns |
+| `x * 3 + y / 2 - 1` | 31 ns | 107 ns | 143 ns | 373 ns |
+| `a.b == null \|\| (x > 10 ? 'big' : 'small') == 'small'` | 45 ns | 114 ns | 280 ns | 578 ns |
+| `var t = 0; for (i : 1..20) { t = t + i * 2; } t` | 15338 ns | 118 ns | 1335 ns | ~5300 ns |
+
+(2026-09-30, after the profiling series: execution was 976 / 711 / 1045 / 9646 ns before it.)
 
 The port parses faster than the jar except on the two short scripts the jar serves from its cache.
-Execution is still 2-7x slower: nothing in the interpreter has been tuned, and the value model
-clones more than Java's references do. The fourth script has local variables, so its tree has a
+Execution is still 1.7-4x slower. `examples/exec_hot.rs` under `perf` shows what is left: the
+RwLock around a frame and a context on every variable read and write, and one AtomicBool
+allocated per execution. The frame lock goes away if the interpreter owns its frame outright and a
+closure copies what it captures -- which is what Java's Closure does -- but that is a redesign of
+closure capture, to be made with the suites watching. The fourth script has local variables, so its tree has a
 Scope and neither engine can reuse a cached parse -- that is the jar's real parse cost.
 
 JEXL's parser backtracks exponentially on deeply nested unterminated literals. Measured on the jar:

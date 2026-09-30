@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # The differential fixtures are committed, so none of this needs a JVM: the jar only
+      # has to run when fixtures are regenerated (oracle/build.sh, tools/run_oracle.py).
+      - run: cargo build --release
+      - run: cargo clippy --release --all-targets -- -D warnings
+      # exec_oracle and script_api fail on any difference from the jar that is not listed,
+      # with its reason, in tests/data/exec/known_mismatches.txt -- and on a listed one that
+      # has started to match.
+      - run: cargo test --release --no-fail-fast
+      - run: cargo package

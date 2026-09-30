@@ -74,12 +74,27 @@ divergences.
 ## Performance
 
 Measured against the jar on Corretto 25 (`cargo run --release --example bench` and
-`rustjexl.oracle.Bench`): parsing is faster here — 118 ns against 15179 ns on a script the Java
-cache cannot hold — but **evaluation is currently 2-7x slower**. Nothing in the interpreter has
-been tuned yet. The numbers are in [PROGRESS.md](PROGRESS.md).
+`rustjexl.oracle.Bench`, same scripts, same context):
+
+| | parse | evaluate |
+|---|---|---|
+| short expressions | 107-121 ns (jar: 31-136, from its cache) | 373-578 ns (jar: 143-316) |
+| a script with a loop and a local | 118 ns (jar: 15,338 — it cannot cache a script with locals) | ~5,300 ns (jar: 1,335) |
+
+So parsing is on a par or far faster, and **evaluation is still 1.7-4x slower** than the JIT-warmed
+JVM. It was 3-7x before a first profiling pass; what remains is locking on variable access, and
+the plan for it is in [PROGRESS.md](PROGRESS.md).
 
 JEXL's parser backtracks exponentially on deeply nested unterminated literals, in Java as well as
 here; bound the size of untrusted input.
+
+## Trust
+
+Every behaviour here is checked against the real `commons-jexl3-3.2.1.jar`, case by case, in
+committed fixtures that `cargo test` replays without a JVM. The few known differences are listed
+with their reasons in [MISMATCHES.md](MISMATCHES.md); the test fails on any difference that is not
+listed, and on a listed one that has been fixed. `sh tools/verify.sh --full` adds a fresh
+8,000-case sample against the jar.
 
 ## Publishing
 
