@@ -1,0 +1,9 @@
+/target
+/oracle/target
+/fuzz/target
+/fuzz/corpus
+/fuzz/artifacts
+# private production corpus: never commit (read only through JEXL_PRIVATE_CORPUS)
+exprs.jsonl
+/corpus/private*
+/runs

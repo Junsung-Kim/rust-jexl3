@@ -1,0 +1,12 @@
+[package]
+name = "jexl-harness"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "jexl-runner"
+path = "src/main.rs"
+
+[dependencies]
+rust-jexl = { path = ".." }

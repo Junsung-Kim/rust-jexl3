@@ -1,0 +1,25 @@
+[package]
+name = "rust-jexl"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "Apache-2.0"
+description = "A faithful Rust port of Apache Commons JEXL 3.2.1, behaviorally compatible with the Java library"
+repository = "https://github.com/OWNER/rust-jexl"
+readme = "README.md"
+keywords = ["jexl", "expression", "script", "interpreter", "template"]
+categories = ["parser-implementations", "template-engine"]
+exclude = ["oracle/target", "corpus/private*", "fuzz/corpus", "fuzz/artifacts", "target"]
+
+[lib]
+name = "rust_jexl"
+
+[dependencies]
+num-bigint = "0.4"
+num-traits = "0.2"
+num-integer = "0.1"
+log = "0.4"
+fancy-regex = "0.14"
+
+[workspace]
+members = [".", "harness"]
