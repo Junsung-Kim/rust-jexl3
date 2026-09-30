@@ -22,10 +22,12 @@ Method: TDD. Each subsystem: oracle-derived cases / ported upstream tests commit
 | java.util.HashMap / HashSet order | GREEN | `cargo test --test java_hash_map` (6 tests, 20,700 JVM sequences) |
 | parser (Parser.jjt productions, JexlParser, FeatureController, getVariables) | GREEN | `cargo test --test parser_oracle` 8,000 cases, 0 mismatches |
 | Debugger (getParsedText, exception snippets) | GREEN | `cargo test --test debugger_oracle` 17,500 CI cases (8,000 parsed + 8,000 round-trip + 1,500 API over 19,927 nodes); local campaign 112,000+; llvm-cov 97.4% |
-| Interpreter, Operators, Engine, contexts, public API | 5,962 cases, **9 differ** (38 skipped: JVM timeout/OOM) | `cargo test --test exec_oracle` |
+| Interpreter, Operators, Engine, contexts, public API | 5,962 cases, **5 differ** (38 skipped: JVM timeout/OOM) | `cargo test --test exec_oracle` |
 | java.util.regex | GREEN for the suites that use it | `cargo test --test java_regex` |
 | JDK shim (introspection) + JexlSandbox | GREEN | `cargo test --test spi_oracle` |
 | JXLT template engine (JxltEngine, TemplateEngine, TemplateInterpreter, TemplateDebugger) | GREEN | `cargo test --test jxlt_oracle`: 8,364 protocol cases + 1,917 API cases, 0 mismatches |
+| JexlScript API (getParsedText, toString, getUnboundParameters, curry, callable) | 2,977 cases, **3 differ** | `cargo test --test exec_oracle script_api` |
+| upstream test suite | **352 of 678 `@Test` ported, 0 failing** | `cargo test --test upstream_arithmetic --test upstream_literals --test upstream_statements --test upstream_lexical --test upstream_engine` |
 | consumer-profile suite | 4,000 cases, **1 differs** | `tools/gen_profile_cases.py`, replayed through `exec_oracle` |
 | private corpus (15,453 production expressions, never committed) | replays clean through `exec_oracle`; see `tools/gen_private_cases.py` | |
 | JexlArithmetic (+ IntegerRange/LongRange) | GREEN | `cargo test --test arith_oracle` 12,000 CI cases; local 150,000-case campaign 0 mismatches |
@@ -101,13 +103,26 @@ python3 tools/run_oracle.py              /tmp/priv.jsonl /tmp/priv_exp.jsonl
 EXEC_CASES=/tmp/priv.jsonl EXEC_EXPECTED=/tmp/priv_exp.jsonl cargo test --release --test exec_oracle
 ```
 
+## Performance (measured, `cargo run --release --example bench` vs `rustjexl.oracle.Bench`)
+
+| script | parse (jar) | parse (port) | exec (jar) | exec (port) |
+|---|---|---|---|---|
+| `a.b > 1 && name == '한글'` | 138 ns | 120 ns | 317 ns | 976 ns |
+| `x * 3 + y / 2 - 1` | 32 ns | 105 ns | 141 ns | 711 ns |
+| `a.b == null \|\| (x > 10 ? 'big' : 'small') == 'small'` | 47 ns | 115 ns | 279 ns | 1045 ns |
+| `var t = 0; for (i : 1..20) { t = t + i * 2; } t` | 15179 ns | 118 ns | 1362 ns | 9646 ns |
+
+The port parses faster than the jar except on the two short scripts the jar serves from its cache.
+Execution is still 2-7x slower: nothing in the interpreter has been tuned, and the value model
+clones more than Java's references do. The fourth script has local variables, so its tree has a
+Scope and neither engine can reuse a cached parse -- that is the jar's real parse cost.
+
+JEXL's parser backtracks exponentially on deeply nested unterminated literals. Measured on the jar:
+`"8%" + "{" * n` takes 66 ms at n=8, 429 ms at n=10, 6.8 s at n=12, 27 s at n=13. The port is
+within 2x of that. It is the original's behaviour, reproduced; bound the size of untrusted input.
+
 ## Open work
-- Upstream test suite port (54 files / 678 `@Test`): in progress.
-- 9 exec + 1 profile mismatches still open (identity-hash ordering, property-error ordering,
-  an `@strict` pragma case, a JVM OutOfMemoryError case).
-- `cargo clippy -- -D warnings`: 540 of the ~565 warnings are `result_large_err`.
-  Measured: `JexlException` is 184 bytes, so `Result<Value, JexlException>` is 184 and
-  `Result<Value, Box<JexlException>>` is 32 -- boxing the error is the fix, not an `allow`.
-  Deferred until the upstream-test port lands, to avoid a crate-wide type change mid-flight.
-- `cargo-fuzz` 30 min on parser and evaluator; 1,000,000-case differential campaign.
-- Benchmark against the oracle; `cargo package`; `MISMATCHES.md`.
+- Upstream test suite: 352 of 678 `@Test` ported. Remaining files are the issue-regression suites
+  (IssuesTest, Issues100/200/300Test) and the JXLT/introspection test classes.
+- 5 exec + 3 script-api + 1 profile mismatch, all explained in [MISMATCHES.md](MISMATCHES.md).
+- 1,000,000-case differential campaign and the cargo-fuzz runs are the last gates.
