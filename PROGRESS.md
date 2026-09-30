@@ -107,17 +107,17 @@ EXEC_CASES=/tmp/priv.jsonl EXEC_EXPECTED=/tmp/priv_exp.jsonl cargo test --releas
 
 | script | parse (jar) | parse (port) | exec (jar) | exec (port) |
 |---|---|---|---|---|
-| `a.b > 1 && name == '한글'` | 136 ns | 121 ns | 316 ns | 535 ns |
-| `x * 3 + y / 2 - 1` | 31 ns | 107 ns | 143 ns | 373 ns |
-| `a.b == null \|\| (x > 10 ? 'big' : 'small') == 'small'` | 45 ns | 114 ns | 280 ns | 578 ns |
-| `var t = 0; for (i : 1..20) { t = t + i * 2; } t` | 15338 ns | 118 ns | 1335 ns | ~5300 ns |
+| `a.b > 1 && name == '한글'` | 136 ns | 122 ns | 316 ns | 495 ns |
+| `x * 3 + y / 2 - 1` | 31 ns | 110 ns | 143 ns | 320 ns |
+| `a.b == null \|\| (x > 10 ? 'big' : 'small') == 'small'` | 45 ns | 116 ns | 280 ns | 538 ns |
+| `var t = 0; for (i : 1..20) { t = t + i * 2; } t` | 15338 ns | 119 ns | 1335 ns | ~4900 ns |
 
 (2026-09-30, after the profiling series: execution was 976 / 711 / 1045 / 9646 ns before it.)
 
 The port parses faster than the jar except on the two short scripts the jar serves from its cache.
-Execution is still 1.7-4x slower. `examples/exec_hot.rs` under `perf` shows what is left: the
-RwLock around a frame and a context on every variable read and write, and one AtomicBool
-allocated per execution. The frame lock goes away if the interpreter owns its frame outright and a
+Execution is still 1.6-3.7x slower. `examples/exec_hot.rs` under `perf` shows what is left: the
+RwLock around a frame and a context on every variable read and write, and the Arc counts an
+interpreter takes and drops per execution. The frame lock goes away if the interpreter owns its frame outright and a
 closure copies what it captures -- which is what Java's Closure does -- but that is a redesign of
 closure capture, to be made with the suites watching. The fourth script has local variables, so its tree has a
 Scope and neither engine can reuse a cached parse -- that is the jar's real parse cost.

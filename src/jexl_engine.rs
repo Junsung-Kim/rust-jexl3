@@ -180,20 +180,18 @@ impl JexlEngine {
         names: Option<&[String]>,
     ) -> Result<JexlScript, JexlException> {
         let source = crate::internal::engine::trim_source(script_text);
-        // port of: `info == null ? createInfo() : info` -- called directly, not through a closure,
-        // so the location is the caller's: a closure does not carry #[track_caller]
-        let info = match info {
-            Some(info) => info,
-            None => self.create_info(),
-        };
-        let parsed = self.parse(Some(info), &features, &source, names)?;
+        // port of: `info == null ? createInfo() : info`, built only on a cache miss since a hit
+        // never reads it; the location is taken here because a closure does not carry #[track_caller]
+        let caller = std::panic::Location::caller();
+        let info = || Some(info.unwrap_or_else(|| self.create_info_at(caller)));
+        let parsed = self.parse(info, &features, &source, names)?;
         Ok(JexlScript { engine: self.clone(), source: Some(source), parsed, frame: None, engine_ref: std::sync::OnceLock::new() })
     }
 
     /// port of: Engine.parse(JexlInfo, JexlFeatures, String, Scope)
     fn parse(
         self: &Arc<Self>,
-        info: Option<JexlInfo>,
+        info: impl FnOnce() -> Option<JexlInfo>,
         features: &JexlFeatures,
         src: &str,
         names: Option<&[String]>,
@@ -205,7 +203,7 @@ impl JexlEngine {
             }
         }
         let mut parser = self.parser.lock().unwrap_or_else(|p| p.into_inner());
-        let parsed = Arc::new(parser.parse(info, features, src, names)?);
+        let parsed = Arc::new(parser.parse(info(), features, src, names)?);
         drop(parser);
         if cached && names.is_none() {
             self.cache
@@ -220,8 +218,12 @@ impl JexlEngine {
     /// info would make `TemplateEngine.parseExpression` throw, so the zero info stands in for it.
     #[track_caller]
     pub(crate) fn create_info(&self) -> JexlInfo {
+        self.create_info_at(std::panic::Location::caller())
+    }
+
+    fn create_info_at(&self, caller: &std::panic::Location<'_>) -> JexlInfo {
         if self.debug {
-            JexlInfo::from_caller()
+            JexlInfo::at_location(caller)
         } else {
             JexlInfo::new(None, 0, 0)
         }
@@ -528,12 +530,11 @@ impl JexlScript {
             let options = self.engine.options_for_script(&self.parsed, context.as_ref());
             (self.engine.engine_ref(&options), options)
         };
-        let mut interpreter =
-            Interpreter::new(jexl, self.parsed.ast.clone(), options, context, self.local_frame(args));
-        let ast = self.parsed.ast.clone();
+        let ast = &self.parsed.ast;
+        let mut interpreter = Interpreter::new(jexl, ast.clone(), options, context, self.local_frame(args));
         if self.frame.is_some() {
             // Closure.execute runs the lambda body, not the script
-            return interpreter.run_closure(&Closure::new(ast, self.parsed.root, None));
+            return interpreter.run_closure(&Closure::new(ast.clone(), self.parsed.root, None));
         }
         interpreter.interpret(ast.node(self.parsed.root))
     }

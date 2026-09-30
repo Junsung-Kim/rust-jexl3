@@ -32,7 +32,10 @@ impl JexlInfo {
     // ("class.method:line"); Rust has no equivalent, so the caller location is used instead.
     #[track_caller]
     pub fn from_caller() -> JexlInfo {
-        let loc = std::panic::Location::caller();
+        JexlInfo::at_location(std::panic::Location::caller())
+    }
+
+    pub(crate) fn at_location(loc: &std::panic::Location<'_>) -> JexlInfo {
         JexlInfo::new(format!("{}:{}", loc.file(), loc.line()), 0, 0)
     }
 

@@ -105,10 +105,10 @@ Measured against the jar on Corretto 25 (`cargo run --release --example bench` a
 
 | | parse | evaluate |
 |---|---|---|
-| short expressions | 107-121 ns (jar: 31-136, from its cache) | 373-578 ns (jar: 143-316) |
-| a script with a loop and a local | 118 ns (jar: 15,338 — it cannot cache a script with locals) | ~5,300 ns (jar: 1,335) |
+| short expressions | 110-122 ns (jar: 31-136, from its cache) | 320-538 ns (jar: 143-316) |
+| a script with a loop and a local | 119 ns (jar: 15,338 — it cannot cache a script with locals) | ~4,900 ns (jar: 1,335) |
 
-So parsing is on a par or far faster, and **evaluation is still 1.7-4x slower** than the JIT-warmed
+So parsing is on a par or far faster, and **evaluation is still 1.6-3.7x slower** than the JIT-warmed
 JVM. It was 3-7x before a first profiling pass; what remains is locking on variable access, and
 the plan for it is in [PROGRESS.md](PROGRESS.md).
 

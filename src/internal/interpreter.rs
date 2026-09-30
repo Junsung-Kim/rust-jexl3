@@ -82,7 +82,8 @@ pub struct Interpreter {
     pub(crate) context: Arc<dyn JexlContext>,
     pub(crate) options: JexlOptions,
     pub(crate) cache: bool,
-    pub(crate) cancelled: Arc<AtomicBool>,
+    /// `None`: the context gave no cancellation flag, so nothing can cancel this run
+    pub(crate) cancelled: Option<Arc<AtomicBool>>,
     pub(crate) functions: Arc<HashMap<String, Value>>,
     pub(crate) ast: Arc<Ast>,
     pub(crate) frame: Option<Frame>,
@@ -111,7 +112,7 @@ impl Interpreter {
             options.get_math_context().copied(),
             options.get_math_scale(),
         );
-        let cancelled = context.get_cancellation().unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
+        let cancelled = context.get_cancellation();
         let functions = if options.get_namespaces().is_empty() {
             jexl.functions.clone()
         } else {
@@ -171,7 +172,7 @@ impl Interpreter {
     }
     // port of: InterpreterBase.isCancelled
     fn is_cancelled(&self) -> bool {
-        self.cancelled.load(Ordering::SeqCst)
+        self.cancelled.as_ref().is_some_and(|c| c.load(Ordering::SeqCst))
     }
     // port of: InterpreterBase.cancelCheck
     fn cancel_check(&self, node: NodeRef<'_>) -> Result<(), JexlException> {
