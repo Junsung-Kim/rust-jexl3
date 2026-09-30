@@ -3,7 +3,12 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 
-use crate::java::hash_map::JHashMap;
+use crate::java::hash_map::{str_hash_code, JHashMap};
+
+/// Whether a map key is the Java String equal to `name`.
+fn is_str(key: &Value, name: &str) -> bool {
+    matches!(key, Value::String(s) if s.units().iter().copied().eq(name.encode_utf16()))
+}
 use crate::java::string::JString;
 use crate::jexl_exception::JexlException;
 use crate::jexl_options::JexlOptions;
@@ -132,11 +137,12 @@ impl MapContext {
 impl JexlContext for MapContext {
     // port of: MapContext.get
     fn get(&self, name: &str) -> Option<Value> {
-        self.map
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .get(&Value::string(name))
-            .cloned()
+        // Every variable read lands here, so it must not allocate a key to look one up.
+        let map = self.map.read().unwrap_or_else(|p| p.into_inner());
+        match map.get_hashed(str_hash_code(name), |k| is_str(k, name)) {
+            Some(found) => found.cloned(),
+            None => map.get(&Value::string(name)).cloned(),
+        }
     }
 
     // port of: MapContext.set
@@ -147,7 +153,11 @@ impl JexlContext for MapContext {
 
     // port of: MapContext.has
     fn has(&self, name: &str) -> bool {
-        self.map.read().unwrap_or_else(|p| p.into_inner()).contains_key(&Value::string(name))
+        let map = self.map.read().unwrap_or_else(|p| p.into_inner());
+        match map.get_hashed(str_hash_code(name), |k| is_str(k, name)) {
+            Some(found) => found.is_some(),
+            None => map.contains_key(&Value::string(name)),
+        }
     }
 
     fn resolve_namespace(&self, name: Option<&str>) -> Option<Value> {

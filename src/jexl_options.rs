@@ -26,7 +26,8 @@ pub struct JexlOptions {
     math_scale: i32,
     strict_arithmetic: bool,
     flags: i32,
-    namespaces: HashMap<String, Value>,
+    /// shared, not copied: every execution clones the options, almost none changes them
+    namespaces: std::sync::Arc<HashMap<String, Value>>,
 }
 
 impl Default for JexlOptions {
@@ -55,7 +56,7 @@ impl JexlOptions {
             math_scale: i32::MIN,
             strict_arithmetic: true,
             flags: DEFAULT,
-            namespaces: HashMap::new(),
+            namespaces: std::sync::Arc::new(HashMap::new()),
         }
     }
 
@@ -158,11 +159,14 @@ impl JexlOptions {
     pub fn set_shared_instance(&mut self, flag: bool) {
         self.flags = set(SHARED, self.flags, flag);
     }
+    pub(crate) fn shared_namespaces(&self) -> std::sync::Arc<HashMap<String, Value>> {
+        self.namespaces.clone()
+    }
     pub fn get_namespaces(&self) -> &HashMap<String, Value> {
         &self.namespaces
     }
     pub fn set_namespaces(&mut self, ns: HashMap<String, Value>) {
-        self.namespaces = ns;
+        self.namespaces = std::sync::Arc::new(ns);
     }
     // port of: JexlOptions.set(JexlOptions)
     pub fn set(&mut self, src: &JexlOptions) {

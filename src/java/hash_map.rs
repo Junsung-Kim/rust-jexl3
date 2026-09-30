@@ -45,6 +45,11 @@ pub fn string_hash_code(utf16: &[u16]) -> i32 {
     utf16.iter().fold(0i32, |h, &c| h.wrapping_mul(31).wrapping_add(i32::from(c)))
 }
 
+/// `java.lang.String.hashCode` of a Rust string, without materialising its UTF-16.
+pub fn str_hash_code(s: &str) -> i32 {
+    s.encode_utf16().fold(0i32, |h, c| h.wrapping_mul(31).wrapping_add(i32::from(c)))
+}
+
 const NIL: usize = usize::MAX;
 const DEFAULT_INITIAL_CAPACITY: usize = 16;
 const MAXIMUM_CAPACITY: usize = 1 << 30;
@@ -402,6 +407,30 @@ impl<K: JavaHash + Clone, V: Clone> JHashMap<K, V> {
 
     fn matches(&self, e: usize, hash: i32, k: &K) -> bool {
         self.nodes[e].hash == hash && k.java_equals(&self.nodes[e].key)
+    }
+
+    /// `get` for a key the caller can recognise but would have to allocate to build: `hash` is its
+    /// `hashCode()`, `eq` tells it apart. A treeified bin orders its keys by `compareTo` and needs
+    /// the key itself, so there this answers `None` and the caller falls back to `get`.
+    pub fn get_hashed(&self, hash: i32, eq: impl Fn(&K) -> bool) -> Option<Option<&V>> {
+        let n = self.table.len();
+        if n == 0 {
+            return Some(None);
+        }
+        let hash = hash ^ ((hash as u32) >> 16) as i32;
+        let first = self.table[bucket(hash, n)];
+        if first != NIL && self.nodes[first].tree {
+            return None;
+        }
+        let mut e = first;
+        while e != NIL {
+            let node = &self.nodes[e];
+            if node.hash == hash && eq(&node.key) {
+                return Some(Some(&node.value));
+            }
+            e = node.next;
+        }
+        Some(None)
     }
 
     /// `getNode`

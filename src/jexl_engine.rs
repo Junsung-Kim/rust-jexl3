@@ -29,7 +29,7 @@ const PRAGMA_JEXLNS: &str = "jexl.namespace.";
 pub struct JexlEngine {
     pub(crate) uberspect: Arc<dyn JexlUberspect>,
     pub(crate) arithmetic: JexlArithmetic,
-    pub(crate) functions: HashMap<String, Value>,
+    pub(crate) functions: Arc<HashMap<String, Value>>,
     pub(crate) stack_overflow: i32,
     pub(crate) strict: bool,
     pub(crate) safe: bool,
@@ -340,7 +340,7 @@ impl JexlEngine {
                             opts.set_flags(&flags);
                         } else if let Some(nsname) = key_s.strip_prefix(PRAGMA_JEXLNS) {
                             if !nsname.is_empty() {
-                                let map = ns.get_or_insert_with(|| self.functions.clone());
+                                let map = ns.get_or_insert_with(|| (*self.functions).clone());
                                 map.insert(nsname.to_string(), value.clone());
                             }
                         }
@@ -728,7 +728,7 @@ impl JexlBuilder {
         Arc::new(JexlEngine {
             uberspect,
             arithmetic,
-            functions: self.namespaces,
+            functions: Arc::new(self.namespaces),
             stack_overflow,
             strict,
             safe,

@@ -63,7 +63,7 @@ pub struct EngineRef {
     pub engine: Arc<crate::jexl_engine::JexlEngine>,
     pub uberspect: Arc<dyn JexlUberspect>,
     pub arithmetic: JexlArithmetic,
-    pub functions: HashMap<String, Value>,
+    pub functions: Arc<HashMap<String, Value>>,
     pub cache: bool,
     pub stack_overflow: i32,
     pub strict: bool,
@@ -83,7 +83,7 @@ pub struct Interpreter {
     pub(crate) options: JexlOptions,
     pub(crate) cache: bool,
     pub(crate) cancelled: Arc<AtomicBool>,
-    pub(crate) functions: HashMap<String, Value>,
+    pub(crate) functions: Arc<HashMap<String, Value>>,
     pub(crate) ast: Arc<Ast>,
     pub(crate) frame: Option<Frame>,
     pub(crate) block: Option<LexicalFrame>,
@@ -115,7 +115,7 @@ impl Interpreter {
         let functions = if options.get_namespaces().is_empty() {
             jexl.functions.clone()
         } else {
-            options.get_namespaces().clone()
+            options.shared_namespaces()
         };
         Interpreter {
             uberspect: jexl.uberspect.clone(),
