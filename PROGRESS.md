@@ -95,7 +95,7 @@ EXEC_CASES=/tmp/pf.jsonl EXEC_EXPECTED=/tmp/pf_exp.jsonl cargo test --release --
 
 ### Private corpus (never written inside the repo)
 ```
-export JEXL_PRIVATE_CORPUS=~/husky-fixtures/jexl/exprs.jsonl
+export JEXL_PRIVATE_CORPUS=/path/to/your/exprs.jsonl
 python3 tools/gen_private_cases.py vars  /tmp/priv_vars.jsonl
 python3 tools/run_oracle.py              /tmp/priv_vars.jsonl /tmp/priv_vars_out.jsonl
 python3 tools/gen_private_cases.py cases /tmp/priv_vars.jsonl /tmp/priv_vars_out.jsonl /tmp/priv.jsonl

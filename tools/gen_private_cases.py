@@ -7,7 +7,7 @@ This script refuses to write anywhere under the repo for that reason.
 
 Two passes, because a context can only be built once the variables are known:
 
-    export JEXL_PRIVATE_CORPUS=~/husky-fixtures/jexl/exprs.jsonl
+    export JEXL_PRIVATE_CORPUS=/path/to/your/exprs.jsonl
     python3 tools/gen_private_cases.py vars  /tmp/priv_vars.jsonl
     python3 tools/run_oracle.py             /tmp/priv_vars.jsonl /tmp/priv_vars_out.jsonl
     python3 tools/gen_private_cases.py cases /tmp/priv_vars.jsonl /tmp/priv_vars_out.jsonl /tmp/priv.jsonl
