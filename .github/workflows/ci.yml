@@ -24,9 +24,10 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          if ! cargo test --release --no-fail-fast 2>&1 | tee test.log; then
+          if ! cargo test --release --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/test.log"; then
+            # (the log lives outside the checkout: cargo package refuses an untracked file)
             # surface the failures as one annotation, so they show on the run page and in the API
-            summary=$(grep -E "panicked at|cases differ|not in known|now matches|^---- |^  (field|want|got) " test.log \
+            summary=$(grep -E "panicked at|cases differ|not in known|now matches|^---- |^  (field|want|got) "  "$RUNNER_TEMP/test.log" \
                       | head -60 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
             echo "::error title=cargo test failed::${summary}"
             exit 1
