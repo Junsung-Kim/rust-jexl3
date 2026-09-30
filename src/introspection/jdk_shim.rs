@@ -811,7 +811,10 @@ fn tables_for(v: &Value) -> Vec<&'static [Sig]> {
                 Some(view) if view.kind() == ViewKind::Values => vec![MAPVIEW, COLLECTION, OBJECT],
                 Some(_) => vec![MAPVIEW, SET, COLLECTION, OBJECT],
                 None if o.as_any().is::<MapEntry>() => vec![MAPENTRY, OBJECT],
-                None => vec![ITERATOR, OBJECT],
+                // java.util.Iterator for an iterator the shim handed out; any other host object
+                // has only Object's methods here (its own come from its HostIntrospector)
+                None if o.as_any().is::<JIterator>() => vec![ITERATOR, OBJECT],
+                None => vec![OBJECT],
             },
         },
         Value::AtomicBoolean(_) => vec![OBJECT],

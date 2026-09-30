@@ -26,7 +26,7 @@ Method: TDD. Each subsystem: oracle-derived cases / ported upstream tests commit
 | java.util.regex | GREEN for the suites that use it | `cargo test --test java_regex` |
 | JDK shim (introspection) + JexlSandbox | GREEN | `cargo test --test spi_oracle` |
 | JXLT template engine (JxltEngine, TemplateEngine, TemplateInterpreter, TemplateDebugger) | GREEN | `cargo test --test jxlt_oracle`: 8,364 protocol cases + 1,917 API cases, 0 mismatches |
-| JexlScript API (getParsedText, toString, getUnboundParameters, curry, callable) | 2,976 cases, **1 differs**, listed | `cargo test --test exec_oracle script_api` |
+| JexlScript API (getParsedText, toString, getUnboundParameters, curry, callable) | 2,976 cases, **0 differ** | `cargo test --test exec_oracle script_api` |
 | upstream test suite | **352 of 678 `@Test` ported, 0 failing** | `cargo test --test upstream_arithmetic --test upstream_literals --test upstream_statements --test upstream_lexical --test upstream_engine` |
 | consumer-profile suite | 4,000 cases, **1 differs** | `tools/gen_profile_cases.py`, replayed through `exec_oracle` |
 | private corpus (15,453 production expressions, never committed) | **GREEN** — 15,453 cases, 0 mismatches, 0 JVM restarts | `tools/gen_private_cases.py`, replayed through `exec_oracle` |
