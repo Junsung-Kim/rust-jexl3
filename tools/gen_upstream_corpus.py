@@ -14,7 +14,8 @@ import os
 import re
 import sys
 
-FILES = ["IssuesTest", "Issues100Test", "Issues200Test", "Issues300Test", "JXLTTest", "ScriptCallableTest"]
+# every upstream test source, not just the issue suites: the expression space is the point
+FILES = None
 
 CTX = {
     "x": {"t": "Integer", "v": "1"}, "y": {"t": "Integer", "v": "2"}, "z": {"t": "Integer", "v": "3"},
@@ -31,9 +32,12 @@ LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')
 
 def main():
     root = os.path.join(sys.argv[1], "src/test/java/org/apache/commons/jexl3")
+    paths = []
+    for base, _, names in os.walk(root):
+        paths.extend(os.path.join(base, f) for f in sorted(names) if f.endswith(".java"))
     seen, n = set(), 0
-    for name in FILES:
-        text = open(os.path.join(root, name + ".java"), encoding="utf-8").read()
+    for path in sorted(paths):
+        text = open(path, encoding="utf-8").read()
         for match in LITERAL.finditer(text):
             try:
                 src = json.loads('"' + match.group(1) + '"')
