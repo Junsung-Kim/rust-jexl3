@@ -346,7 +346,7 @@ impl BigDecimal {
                 }
                 dot = true;
             } else if c == b'e' as u16 || c == b'E' as u16 {
-                scl -= parse_exp(&u, i)?;
+                scl -= parse_exp(u, i)?;
                 break;
             } else if compact {
                 return Err(MathError::NumberFormat(

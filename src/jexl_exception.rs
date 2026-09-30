@@ -60,28 +60,35 @@ pub enum ExceptionKind {
 }
 
 /// A Jexl exception (or a Java throwable that JEXL lets escape), with its cause chain.
+///
+/// The body lives behind a Box so the type is one word: every interpreter method returns
+/// `Result<Value, JexlException>`, and an error variant the size of the body would be copied
+/// through the whole success path too.
 #[derive(Clone)]
-pub struct JexlException {
+pub struct JexlException(Box<ExceptionData>);
+
+#[derive(Clone)]
+struct ExceptionData {
     kind: ExceptionKind,
     /// the node the exception is attached to (JexlException.mark)
     mark: Option<NodeHandle>,
     info: Option<JexlInfo>,
     /// Throwable.getMessage() of the super class (JexlException.getDetail); None is Java null
     detail: Option<JString>,
-    cause: Option<Box<JexlException>>,
+    cause: Option<JexlException>,
 }
 
 const MAX_EXCHARLOC: usize = 42;
 
 impl JexlException {
     fn build(kind: ExceptionKind, mark: Option<NodeHandle>, info: Option<JexlInfo>, detail: Option<JString>, cause: Option<JexlException>) -> Self {
-        JexlException { kind, mark, info, detail, cause: Self::unwrap(cause).map(Box::new) }
+        JexlException(Box::new(ExceptionData { kind, mark, info, detail, cause: Self::unwrap(cause) }))
     }
 
     // port of: JexlException.unwrap
     fn unwrap(cause: Option<JexlException>) -> Option<JexlException> {
         match cause {
-            Some(c) if matches!(c.kind, ExceptionKind::TryFailed) => c.cause.map(|b| *b),
+            Some(c) if matches!(c.0.kind, ExceptionKind::TryFailed) => c.0.cause,
             c => c,
         }
     }
@@ -113,7 +120,7 @@ impl JexlException {
 
     /// A raw Java throwable with a cause.
     pub fn java_with_cause(class: &str, message: Option<String>, cause: Option<JexlException>) -> Self {
-        JexlException { kind: ExceptionKind::Java { class: class.to_string() }, mark: None, info: None, detail: message.map(JString::from), cause: cause.map(Box::new) }
+        JexlException(Box::new(ExceptionData { kind: ExceptionKind::Java { class: class.to_string() }, mark: None, info: None, detail: message.map(JString::from), cause }))
     }
 
     // port of: JexlException.merge
@@ -223,10 +230,10 @@ impl JexlException {
 
     // port of: JexlException.tryFailed(InvocationTargetException)
     pub fn try_failed(cause: JexlException) -> Self {
-        if !matches!(cause.kind, ExceptionKind::Java { .. }) {
+        if !matches!(cause.0.kind, ExceptionKind::Java { .. }) {
             return cause;
         }
-        JexlException { kind: ExceptionKind::TryFailed, mark: None, info: None, detail: Some(JString::from("tryFailed")), cause: Some(Box::new(cause)) }
+        JexlException(Box::new(ExceptionData { kind: ExceptionKind::TryFailed, mark: None, info: None, detail: Some(JString::from("tryFailed")), cause: Some(cause) }))
     }
 
     // port of: JxltEngine.Exception(JexlInfo, String, Throwable)
@@ -241,7 +248,7 @@ impl JexlException {
 
     /// Whether this is a `JxltEngine.Exception` (the only kind `evalIdentifier` catches).
     pub fn is_jxlt(&self) -> bool {
-        matches!(self.kind, ExceptionKind::Jxlt)
+        matches!(self.0.kind, ExceptionKind::Jxlt)
     }
 
     // port of: JexlException.methodSignature
@@ -259,22 +266,22 @@ impl JexlException {
     }
 
     pub fn kind(&self) -> &ExceptionKind {
-        &self.kind
+        &self.0.kind
     }
 
     /// The node this exception was raised at (JexlException.mark).
     pub fn mark(&self) -> Option<&NodeHandle> {
-        self.mark.as_ref()
+        self.0.mark.as_ref()
     }
 
     /// The raw info (JexlException.info()).
     pub fn info(&self) -> Option<&JexlInfo> {
-        self.info.as_ref()
+        self.0.info.as_ref()
     }
 
     // port of: JexlException.getInfo — the info, with the Debugger-rendered detail when a node is marked
     pub fn get_info(&self) -> Option<JexlInfo> {
-        match (&self.info, &self.mark) {
+        match (&self.0.info, &self.0.mark) {
             (Some(info), Some(mark)) => match crate::internal::debugger::Debugger::detail_of(mark) {
                 Some(d) => Some(info.with_detail(d)),
                 None => Some(info.clone()),
@@ -284,31 +291,32 @@ impl JexlException {
     }
 
     pub fn get_cause(&self) -> Option<&JexlException> {
-        self.cause.as_deref()
+        self.0.cause.as_ref()
     }
 
     /// Replaces the cause (Throwable.initCause-like, used when wrapping).
+    #[allow(dead_code)] // port of JexlException.setCause; no caller yet, but the shape is Java's
     pub(crate) fn set_cause(&mut self, cause: Option<JexlException>) {
-        self.cause = cause.map(Box::new);
+        self.0.cause = cause;
     }
 
     // port of: JexlException.getDetail
     /// port of: JexlException.Annotation.getAnnotation
     pub fn get_annotation(&self) -> Option<String> {
-        match self.kind {
+        match self.0.kind {
             ExceptionKind::Annotation => self.get_detail().map(|d| d.to_rust()),
             _ => None,
         }
     }
 
     pub fn get_detail(&self) -> Option<&JString> {
-        self.detail.as_ref()
+        self.0.detail.as_ref()
     }
 
     /// The Java class name, relative to org.apache.commons.jexl3 for JEXL classes
     /// ("JexlException$Variable", "JxltEngine$Exception", "java.lang.ArithmeticException").
     pub fn class_name(&self) -> String {
-        match &self.kind {
+        match &self.0.kind {
             ExceptionKind::Jexl => "JexlException".into(),
             ExceptionKind::Tokenization => "JexlException$Tokenization".into(),
             ExceptionKind::Parsing => "JexlException$Parsing".into(),
@@ -333,12 +341,12 @@ impl JexlException {
 
     /// Whether this is a JEXL exception (as opposed to a raw Java throwable).
     pub fn is_jexl(&self) -> bool {
-        !matches!(self.kind, ExceptionKind::Java { .. })
+        !matches!(self.0.kind, ExceptionKind::Java { .. })
     }
 
     /// JexlException.Return / Break / Continue — the three that unwind without being errors.
     pub fn is_control_flow(&self) -> bool {
-        matches!(self.kind, ExceptionKind::Return { .. } | ExceptionKind::Break | ExceptionKind::Continue)
+        matches!(self.0.kind, ExceptionKind::Return { .. } | ExceptionKind::Break | ExceptionKind::Continue)
     }
 
     // port of: JexlException.parserError
@@ -349,7 +357,7 @@ impl JexlException {
             return JStringBuilder::new().str(prefix).str(" error in '").jstr(expr).str("'").build();
         }
         let me = (MAX_EXCHARLOC / 2) as i32;
-        let column = self.info.as_ref().map(|i| i.get_column()).unwrap_or(0);
+        let column = self.0.info.as_ref().map(|i| i.get_column()).unwrap_or(0);
         let mut begin = column - me;
         if begin < 0 || (length as i32) < me {
             begin = 0;
@@ -371,9 +379,9 @@ impl JexlException {
     // port of: JexlException.detailedMessage (and subclass overrides)
     fn detailed_message(&self) -> JString {
         let empty = JString::empty();
-        let detail = self.detail.as_ref().unwrap_or(&empty);
+        let detail = self.0.detail.as_ref().unwrap_or(&empty);
         let wrap = |a: &str, b: &str| JStringBuilder::new().str(a).jstr(detail).str(b).build();
-        match &self.kind {
+        match &self.0.kind {
             ExceptionKind::Jexl => wrap("JEXL error : ", ""),
             ExceptionKind::Tokenization => self.parser_error("tokenization", detail),
             ExceptionKind::Parsing => self.parser_error("parsing", detail),
@@ -400,17 +408,17 @@ impl JexlException {
 
     // port of: JexlException.getMessage (Throwable.getMessage for raw Java throwables)
     pub fn get_message(&self) -> Option<JString> {
-        if let ExceptionKind::Java { .. } = self.kind {
-            return self.detail.clone();
+        if let ExceptionKind::Java { .. } = self.0.kind {
+            return self.0.detail.clone();
         }
         let mut msg = JStringBuilder::new();
-        match &self.info {
+        match &self.0.info {
             Some(i) => msg.jstr(&i.to_jstring()),
             None => msg.str("?:"),
         };
         msg.str(" ").jstr(&self.detailed_message());
-        if let Some(c) = &self.cause {
-            if matches!(&c.kind, ExceptionKind::Java { class } if class == "JexlArithmetic$NullOperand") {
+        if let Some(c) = &self.0.cause {
+            if matches!(&c.0.kind, ExceptionKind::Java { class } if class == "JexlArithmetic$NullOperand") {
                 msg.str(" caused by null operand");
             }
         }
@@ -424,8 +432,8 @@ impl JexlException {
 
     // port of: JexlException.Ambiguous.tryCleanSource
     pub fn try_clean_source(&self, src: &str) -> String {
-        if let ExceptionKind::Ambiguous { recover: Some(end) } = &self.kind {
-            if let Some(ji) = &self.info {
+        if let ExceptionKind::Ambiguous { recover: Some(end) } = &self.0.kind {
+            if let Some(ji) = &self.0.info {
                 return Self::slice_source(src, ji.get_line(), ji.get_column(), end.get_line(), end.get_column());
             }
         }
@@ -457,7 +465,7 @@ impl JexlException {
 
     /// The value carried by a Return exception.
     pub fn return_value(&self) -> Option<&Value> {
-        match &self.kind {
+        match &self.0.kind {
             ExceptionKind::Return { value } => Some(value),
             _ => None,
         }
@@ -496,7 +504,7 @@ pub(crate) fn java_lines(src: &str) -> Vec<&str> {
 impl fmt::Debug for JexlException {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {}", self.class_name(), self.message())?;
-        if let Some(c) = &self.cause {
+        if let Some(c) = &self.0.cause {
             write!(f, " <- {:?}", c)?;
         }
         Ok(())

@@ -148,6 +148,7 @@ impl Interpreter {
         NodeHandle::new(self.ast.clone(), node.id)
     }
 
+    #[allow(dead_code)] // the Ast accessor the visitors mirror; kept beside node_ref for symmetry
     fn node(&self, id: NodeId) -> NodeRef<'_> {
         self.ast.node(id)
     }
@@ -383,12 +384,11 @@ impl Interpreter {
         }
         let mut xcause: Option<JexlException> = None;
         let resolvers = self.uberspect.get_resolvers(Some(operator), object);
-        match self.uberspect.get_property_get_with(resolvers, object, attribute) {
-            Some(vg) => match vg.invoke(object) {
+        if let Some(vg) = self.uberspect.get_property_get_with(resolvers, object, attribute) {
+            match vg.invoke(object) {
                 Ok(v) => return Ok(v),
                 Err(e) => xcause = Some(e),
-            },
-            None => {}
+            }
         }
         let n = match node {
             None => {
@@ -543,8 +543,10 @@ impl Interpreter {
             JJTFALSENODE => Ok(Value::Boolean(false)),
             JJTNUMBERLITERAL => {
                 let literal = node.number().expect("number").get_literal_value();
-                if data.is_some() && node.number().expect("number").is_integer() {
-                    return self.get_attribute(data.expect("data"), &literal, Some(node));
+                if let Some(data) = data {
+                    if node.number().expect("number").is_integer() {
+                        return self.get_attribute(data, &literal, Some(node));
+                    }
                 }
                 Ok(literal)
             }
@@ -619,7 +621,7 @@ impl Interpreter {
             JJTUNARYPLUSNODE => self.visit_unary_plus(node, data),
             JJTBITWISECOMPLNODE => {
                 let arg = self.accept(node.child(0), data)?;
-                let result = Operators::try_overload(self, node, JexlOperator::Complement, &[arg.clone()])?;
+                let result = Operators::try_overload(self, node, JexlOperator::Complement, std::slice::from_ref(&arg))?;
                 if !is_try_failed(&result) {
                     return Ok(result);
                 }
@@ -631,7 +633,7 @@ impl Interpreter {
             }
             JJTNOTNODE => {
                 let val = self.accept(node.child(0), data)?;
-                let result = Operators::try_overload(self, node, JexlOperator::Not, &[val.clone()])?;
+                let result = Operators::try_overload(self, node, JexlOperator::Not, std::slice::from_ref(&val))?;
                 if !is_try_failed(&result) {
                     return Ok(result);
                 }
@@ -781,7 +783,7 @@ impl Interpreter {
     fn visit_unary_minus(&mut self, node: NodeRef<'_>, data: Option<&Value>) -> R {
         let val_node = node.child(0);
         let val = self.accept(val_node, data)?;
-        let result = Operators::try_overload(self, node, JexlOperator::Negate, &[val.clone()])?;
+        let result = Operators::try_overload(self, node, JexlOperator::Negate, std::slice::from_ref(&val))?;
         if !is_try_failed(&result) {
             return Ok(result);
         }
@@ -805,7 +807,7 @@ impl Interpreter {
     fn visit_unary_plus(&mut self, node: NodeRef<'_>, data: Option<&Value>) -> R {
         let val_node = node.child(0);
         let val = self.accept(val_node, data)?;
-        let result = Operators::try_overload(self, node, JexlOperator::Positivize, &[val.clone()])?;
+        let result = Operators::try_overload(self, node, JexlOperator::Positivize, std::slice::from_ref(&val))?;
         if !is_try_failed(&result) {
             return Ok(result);
         }
@@ -998,7 +1000,7 @@ impl Interpreter {
             let frame = node
                 .script()
                 .and_then(|s| s.get_scope())
-                .and_then(|scope| create_frame(&self.ast.scopes_ref(), scope, self.frame.as_ref(), None));
+                .and_then(|scope| create_frame(self.ast.scopes_ref(), scope, self.frame.as_ref(), None));
             // a lambda a TemplateInterpreter evaluates is an anonymous Closure subclass in Java
             return Ok(Value::object(if self.tmpl.is_some() {
                 Closure::from_template(self.ast.clone(), node.id, frame)
@@ -1080,8 +1082,9 @@ impl Interpreter {
     }
 
     // port of: Interpreter.visit(ASTForeachStatement)
+    #[allow(clippy::explicit_counter_loop)] // the count is the loop's own state, not an index
     fn visit_foreach(&mut self, node: NodeRef<'_>, data: Option<&Value>) -> R {
-        let mut result = Value::Null;
+        let result;
         let loop_reference = node.child(0);
         let loop_variable_node = loop_reference.child(0);
         let loop_variable = loop_variable_node.identifier().expect("loop variable").clone();
@@ -1105,7 +1108,7 @@ impl Interpreter {
                 return Ok(Value::Null);
             }
             let statement = if node.num_children() >= 3 { Some(node.child(2)) } else { None };
-            let for_each = Operators::try_overload(self, node, JexlOperator::ForEach, &[iterable_value.clone()])?;
+            let for_each = Operators::try_overload(self, node, JexlOperator::ForEach, std::slice::from_ref(&iterable_value))?;
             let items: Vec<Value> = if !is_try_failed(&for_each) {
                 match self.uberspect.get_iterator(&for_each) {
                     Some(it) => it.collect(),
@@ -1118,6 +1121,8 @@ impl Interpreter {
                 }
             };
             let mut result = Value::Null;
+            // ponytail: the index is the loop body's own state (the lexical block is pushed only
+            // from the second iteration on), so `enumerate` would not read any better here.
             let mut cnt = 0;
             for value in items {
                 self.cancel_check(node)?;
@@ -1298,7 +1303,9 @@ impl Interpreter {
     }
 
     // port of: Interpreter.visit(ASTReference)
-    fn visit_reference(&mut self, node: NodeRef<'_>, data: Option<&Value>) -> R {
+    // Java assigns the flag on every exit path, even where nothing reads it afterwards
+    #[allow(unused_assignments)]
+    fn visit_reference(&mut self, node: NodeRef<'_>, _data: Option<&Value>) -> R {
         self.cancel_check(node)?;
         let num_children = node.num_children();
         let parent = node.parent();
@@ -1421,6 +1428,8 @@ impl Interpreter {
     }
 
     // port of: Interpreter.executeAssign
+    // the flag and the `ant != null` guard are Java's own, kept verbatim
+    #[allow(unused_assignments, clippy::unnecessary_unwrap)]
     fn execute_assign(&mut self, node: NodeRef<'_>, assignop: Option<JexlOperator>, data: Option<&Value>) -> R {
         self.cancel_check(node)?;
         let left = node.child(0);
@@ -1546,7 +1555,8 @@ impl Interpreter {
         if property_node.is_identifier_access() {
             let property_id = property_node.identifier_access().expect("access");
             if antish && ant.is_some() && object.is_null() && !property_node.is_safe() && !property_node.is_expression() {
-                let a = ant.as_mut().expect("ant");
+                // the guard above is Java's own `ant != null` test, kept verbatim
+                let a = ant.as_mut().expect("checked above");
                 if last > 0 {
                     a.push('.');
                 }
@@ -2011,8 +2021,7 @@ fn npe_frame(method: &str, receiver: &str) -> JexlException {
             format!(
                 "Cannot invoke \"org.apache.commons.jexl3.internal.Frame.{}\" because \"{}\" is null",
                 method, receiver
-            )
-            .into(),
+            ),
         ),
     )
 }

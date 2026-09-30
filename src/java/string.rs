@@ -80,7 +80,7 @@ impl JString {
         let last = h.len() - n.len();
         let mut k = from;
         while k <= last {
-            if &h[k..k + n.len()] == &n[..] {
+            if h[k..k + n.len()] == n[..] {
                 return k as i32;
             }
             k += 1;
@@ -95,7 +95,7 @@ impl JString {
         }
         let mut k = h.len() - n.len();
         loop {
-            if &h[k..k + n.len()] == &n[..] {
+            if h[k..k + n.len()] == n[..] {
                 return k as i32;
             }
             if k == 0 {

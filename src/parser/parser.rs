@@ -26,7 +26,7 @@ pub(crate) type Tok = usize;
 /// What a production can throw.
 #[derive(Debug)]
 pub(crate) enum PErr {
-    Parse(ParseException),
+    Parse(#[allow(dead_code)] ParseException),
     Lex(TokenMgrException),
     Jexl(JexlException),
 }
@@ -383,6 +383,9 @@ impl Parser {
                 break;
             }
             let child = node.child(c);
+            // the two branches agree today; they are separate in the grammar action, and staying
+            // separate is what makes the next divergence a one-line change
+            #[allow(clippy::if_same_then_else)]
             if kind == JJTARRAYLITERAL && child.is(JJTREFERENCE) {
                 constant = child.is_constant_literal(true);
             } else if kind == JJTMAPLITERAL && child.is(JJTMAPENTRY) {

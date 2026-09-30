@@ -6,6 +6,7 @@
 //! `~/src/commons-jexl-3.2.1/src/test/java/org/apache/commons/jexl3/`.
 //! Every expectation here is one the JVM produces: the 148 methods of these eight classes were
 //! built against `commons-jexl3-3.2.1.jar` and run green on Corretto 25 before being transcribed.
+#![allow(clippy::needless_range_loop)] // ported Java test code
 mod common;
 
 use std::sync::Arc;

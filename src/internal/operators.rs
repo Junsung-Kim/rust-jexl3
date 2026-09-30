@@ -1,5 +1,5 @@
 // port of: org.apache.commons.jexl3.internal.Operators
-use crate::jexl_arithmetic::{ArithError, JexlArithmetic};
+use crate::jexl_arithmetic::ArithError;
 use crate::jexl_exception::JexlException;
 use crate::jexl_operator::JexlOperator;
 use crate::parser::jexl_node::NodeRef;
@@ -186,7 +186,7 @@ impl Operators {
         if object.is_null() {
             return Ok(Value::Boolean(true));
         }
-        let result = Self::try_overload(it, node, JexlOperator::Empty, &[object.clone()])?;
+        let result = Self::try_overload(it, node, JexlOperator::Empty, std::slice::from_ref(object))?;
         if !is_try_failed(&result) {
             return Ok(result);
         }
@@ -219,7 +219,7 @@ impl Operators {
         if object.is_null() {
             return Ok(Value::Integer(0));
         }
-        let result = Self::try_overload(it, node, JexlOperator::Size, &[object.clone()])?;
+        let result = Self::try_overload(it, node, JexlOperator::Size, std::slice::from_ref(object))?;
         if !is_try_failed(&result) {
             return Ok(result);
         }

@@ -1,3 +1,4 @@
+#![allow(unreachable_patterns)] // the fallthrough mirrors Oracle.encode's final else
 // Typed value encoding shared with the Java oracle (Oracle.encode); see oracle/PROTOCOL.md.
 #![allow(dead_code)]
 

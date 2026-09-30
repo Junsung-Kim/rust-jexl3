@@ -4,6 +4,7 @@
 //! `JexlTestCase` installs, the `Asserter` / `JexlEvalContext` pair every operator test drives, and
 //! the bean fixtures (`Foo`, `Aggregate`, ...) reflection gives Java for free. Each item names the
 //! Java class it stands for.
+#![allow(clippy::new_ret_no_self, clippy::type_complexity, clippy::manual_inspect)] // test doubles for Java classes: the shapes are Java's
 #![allow(dead_code)]
 
 use std::any::Any;

@@ -14,6 +14,7 @@
 //! (`Foo`, `Duck`, `Cached0`...) by reflection; this port registers them through
 //! `HostIntrospector`, the SPI an embedder uses for its own types, modelling only the members the
 //! ported tests touch.
+#![allow(clippy::new_ret_no_self, clippy::cloned_ref_to_slice_refs, clippy::redundant_guards)] // ported Java test code
 #![allow(clippy::bool_assert_comparison)]
 
 mod common;

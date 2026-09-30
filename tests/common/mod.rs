@@ -1,3 +1,4 @@
+#![allow(clippy::redundant_closure, dead_code)] // helpers shared by suites that use different subsets
 pub mod decode;
 pub mod encode;
 pub mod hosts;
@@ -85,7 +86,7 @@ fn identity_hashed(v: &Json) -> bool {
     match v {
         Json::Obj(_) => match v.get("t").and_then(Json::string).as_deref() {
             // a host object or a script: neither overrides hashCode
-            Some("Object") | Some("Script") => true,
+            Some("Object") | Some("Script") | Some("Host") => true,
             _ => matches!(v.get("v"), Some(Json::Arr(items)) if items.iter().any(identity_hashed)),
         },
         Json::Arr(items) => items.iter().any(identity_hashed),

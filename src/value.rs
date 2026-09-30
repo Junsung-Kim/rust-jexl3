@@ -135,6 +135,7 @@ impl JArray {
     pub fn ptr_eq(&self, o: &JArray) -> bool {
         Arc::ptr_eq(&self.items, &o.items)
     }
+    #[allow(dead_code)] // the identity a Java reference has; used when a value needs one
     fn addr(&self) -> usize {
         Arc::as_ptr(&self.items) as *const () as usize
     }
@@ -202,6 +203,7 @@ impl JList {
     pub fn ptr_eq(&self, o: &JList) -> bool {
         Arc::ptr_eq(&self.0, &o.0)
     }
+    #[allow(dead_code)] // the identity a Java reference has; used when a value needs one
     fn addr(&self) -> usize {
         Arc::as_ptr(&self.0) as *const () as usize
     }
@@ -279,6 +281,7 @@ impl JMap {
     pub fn ptr_eq(&self, o: &JMap) -> bool {
         Arc::ptr_eq(&self.0, &o.0)
     }
+    #[allow(dead_code)] // the identity a Java reference has; used when a value needs one
     fn addr(&self) -> usize {
         Arc::as_ptr(&self.0) as *const () as usize
     }
@@ -341,6 +344,7 @@ impl JSet {
     pub fn ptr_eq(&self, o: &JSet) -> bool {
         Arc::ptr_eq(&self.0, &o.0)
     }
+    #[allow(dead_code)] // the identity a Java reference has; used when a value needs one
     fn addr(&self) -> usize {
         Arc::as_ptr(&self.0) as *const () as usize
     }

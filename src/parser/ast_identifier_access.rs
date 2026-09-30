@@ -9,6 +9,7 @@ pub struct ASTIdentifierAccess {
     pub(crate) name: JString,
     identifier: Option<i32>,
     /// ASTIdentifierAccessJxlt.jxltExpr (set lazily by the interpreter)
+    #[allow(dead_code)] // ASTIdentifierAccess.jxltExpr: the parser fills it, nothing reads it yet
     pub(crate) jxlt_expr: OnceLock<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
 }
 

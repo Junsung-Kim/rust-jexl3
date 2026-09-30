@@ -918,6 +918,7 @@ impl TemplateEngine {
         let mut block_type: Option<BlockType> = None;
         let mut lineno = 1i32;
         let mut start = 0i32;
+        #[allow(clippy::explicit_counter_loop)] // the line number is JXLT state, not an index
         for line in read_lines(source.units()) {
             let prefix_len = Self::starts_with(line, &pattern);
             match block_type {

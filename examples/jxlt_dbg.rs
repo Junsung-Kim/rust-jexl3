@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use rust_jexl::jexl_context::{JexlContext, MapContext};
+use rust_jexl::jexl_context::MapContext;
 use rust_jexl::jexl_engine::JexlBuilder;
 use rust_jexl::java::string::JString;
 use rust_jexl::jexl_info::JexlInfo;

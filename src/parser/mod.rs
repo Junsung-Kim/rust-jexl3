@@ -8,6 +8,7 @@ mod jexl_parser;
 pub mod jjt_parser_state;
 pub mod number_parser;
 pub mod parse_exception;
+#[allow(clippy::module_inception)] // one module per Java class, and the class is Parser
 pub mod parser;
 mod parser_gen;
 pub mod parser_constants;

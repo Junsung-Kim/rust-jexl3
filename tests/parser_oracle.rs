@@ -2,6 +2,7 @@
 //! org.apache.commons.jexl3.parser.Parser and compares the whole tree (class, line, column, node
 //! attributes, children), the parse exception (class and exact message), `getVariables()`,
 //! parameters, locals and pragmas. Fixtures come from tools/fuzz_gen.py + the oracle's `ast` mode.
+#![allow(clippy::unwrap_or_default)]
 mod common;
 
 use common::encode::encode;

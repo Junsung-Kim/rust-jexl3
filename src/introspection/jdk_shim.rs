@@ -181,6 +181,7 @@ pub struct JIterator {
 }
 
 impl JIterator {
+    #[allow(clippy::new_ret_no_self)] // mirrors the Java constructor: it hands back a value
     fn new(class: &'static str, items: Vec<Value>) -> Value {
         Value::object(JIterator { class, items: Mutex::new(items.into_iter()) })
     }
@@ -188,7 +189,7 @@ impl JIterator {
         self.items.lock().unwrap_or_else(|p| p.into_inner())
     }
     fn has_next(&self) -> bool {
-        self.lock().as_slice().first().is_some()
+        !self.lock().as_slice().is_empty()
     }
     fn next(&self) -> Option<Value> {
         self.lock().next()
@@ -208,6 +209,7 @@ impl crate::value::HostObject for JIterator {
 pub struct JavaStringBuilder(Mutex<Vec<u16>>);
 
 impl JavaStringBuilder {
+    #[allow(clippy::new_ret_no_self)] // mirrors the Java constructor: it hands back a value
     fn new(units: Vec<u16>) -> Value {
         Value::object(JavaStringBuilder(Mutex::new(units)))
     }
@@ -1139,7 +1141,7 @@ struct DuckGet {
 
 impl JexlPropertyGet for DuckGet {
     fn invoke(&self, obj: &Value) -> Result<Value, JexlException> {
-        (self.sig.body)(obj, &[self.property.clone()])
+        (self.sig.body)(obj, std::slice::from_ref(&self.property))
     }
     fn try_invoke(&self, obj: &Value, key: &Value) -> Result<TryResult, JexlException> {
         let same = (self.property.is_null() && key.is_null()) || self.property.java_equals(key);
@@ -2783,7 +2785,7 @@ fn radix_string(v: i64, radix: i32) -> String {
         return v.to_string();
     }
     let neg = v < 0;
-    let mut n = (v as i128).abs() as u128;
+    let mut n = (v as i128).unsigned_abs();
     let mut out: Vec<u8> = Vec::new();
     if n == 0 {
         out.push(b'0');

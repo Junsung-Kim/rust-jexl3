@@ -4,6 +4,7 @@
 //! `~/src/commons-jexl-3.2.1/src/test/java/org/apache/commons/jexl3/`.
 //! Every expectation here is one the JVM produces: these three classes were built against
 //! `commons-jexl3-3.2.1.jar` and run green on Corretto 25 before being transcribed.
+#![allow(clippy::cloned_ref_to_slice_refs)] // ported Java test code
 mod common;
 
 use std::sync::atomic::{AtomicBool, Ordering};

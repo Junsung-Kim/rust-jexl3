@@ -12,6 +12,7 @@
 //! upstream suite; `builder()` below is that default.
 //! The upstream test methods of these classes that are not here are listed, with their
 //! reason, in COMPATIBILITY.md.
+#![allow(clippy::cloned_ref_to_slice_refs)] // ported Java test code
 #![allow(clippy::bool_assert_comparison)]
 
 use std::any::Any;
