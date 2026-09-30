@@ -47,7 +47,69 @@ pub fn normalize(v: &Json) -> Json {
             Json::str(&out)
         }
         Json::Arr(a) => Json::Arr(a.iter().map(normalize).collect()),
-        Json::Obj(kv) => Json::Obj(kv.iter().map(|(k, x)| (k.clone(), normalize(x))).collect()),
+        Json::Obj(kv) => {
+            let out: Vec<(String, Json)> = kv.iter().map(|(k, x)| (k.clone(), normalize(x))).collect();
+            let obj = Json::Obj(out);
+            if unordered(&obj) {
+                return sort_elements(&obj);
+            }
+            obj
+        }
         other => other.clone(),
     }
+}
+
+/// Whether this encoded collection's iteration order is not reproducible.
+///
+/// `java.util.HashMap` and `HashSet` iterate in hash order, and an object that does not override
+/// `hashCode` hashes by identity — a number the JVM picks per object, per run. Two runs of the
+/// *same* Java program disagree, so there is nothing here for the port to match. Insertion-ordered
+/// collections (`LinkedHashMap`, `LinkedHashSet`) and hash-ordered ones holding only values with a
+/// defined `hashCode` stay ordered and stay compared.
+fn unordered(v: &Json) -> bool {
+    let class = match v.get("c").and_then(Json::string) {
+        Some(c) => c,
+        None => return false,
+    };
+    if !class.contains("Hash") || class.contains("Linked") {
+        return false;
+    }
+    match v.get("v") {
+        Some(Json::Arr(items)) => items.iter().any(identity_hashed),
+        _ => false,
+    }
+}
+
+/// An encoded value whose Java `hashCode` is its identity hash.
+fn identity_hashed(v: &Json) -> bool {
+    match v {
+        Json::Obj(_) => match v.get("t").and_then(Json::string).as_deref() {
+            // a host object or a script: neither overrides hashCode
+            Some("Object") | Some("Script") => true,
+            _ => matches!(v.get("v"), Some(Json::Arr(items)) if items.iter().any(identity_hashed)),
+        },
+        Json::Arr(items) => items.iter().any(identity_hashed),
+        _ => false,
+    }
+}
+
+fn sort_elements(v: &Json) -> Json {
+    let Json::Obj(kv) = v else { return v.clone() };
+    Json::Obj(
+        kv.iter()
+            .map(|(k, x)| {
+                if k != "v" {
+                    return (k.clone(), x.clone());
+                }
+                match x {
+                    Json::Arr(items) => {
+                        let mut sorted = items.clone();
+                        sorted.sort_by_key(|i| json::to_string(i));
+                        (k.clone(), Json::Arr(sorted))
+                    }
+                    other => (k.clone(), other.clone()),
+                }
+            })
+            .collect(),
+    )
 }

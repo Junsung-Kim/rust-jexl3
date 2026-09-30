@@ -1,5 +1,6 @@
 // port of: org.apache.commons.jexl3.internal.IntegerRange and org.apache.commons.jexl3.internal.LongRange
 use std::any::Any;
+use crate::java::string::JString;
 
 use crate::value::{HostObject, Value};
 
@@ -168,8 +169,21 @@ impl HostObject for Range {
 
     // port of: IntegerRange.hashCode / LongRange.hashCode
     fn java_hash_code(&self) -> Option<i32> {
-        // getClass().hashCode() is an identity hash in Java: not reproducible.
-        None
+        // Java seeds this with getClass().hashCode(), an identity hash: the absolute number is not
+        // reproducible even across two JVM runs. What IS observable, and what the hashCode/equals
+        // contract needs, is that two equal ranges hash alike -- so the class contributes a stable
+        // seed (its name's String.hashCode) instead of an address.
+        let mut hash = JString::from(HostObject::class_name(self).as_str()).hash_code();
+        let (min, max) = match self.width {
+            Width::Integer => (self.min as i32, self.max as i32),
+            Width::Long => (
+                (self.min ^ ((self.min as u64 >> 32) as i64)) as i32,
+                (self.max ^ ((self.max as u64 >> 32) as i64)) as i32,
+            ),
+        };
+        hash = 13i32.wrapping_mul(hash).wrapping_add(min);
+        hash = 13i32.wrapping_mul(hash).wrapping_add(max);
+        Some(hash)
     }
 
     // port of: IntegerRange.equals / LongRange.equals

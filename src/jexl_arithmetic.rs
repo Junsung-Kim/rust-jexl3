@@ -5,6 +5,7 @@
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
 
+use crate::introspection::jdk_shim::is_char_sequence;
 use crate::internal::range::{Range, Width};
 use crate::java::big_decimal::{BigDecimal, MathContext, MathError};
 use crate::java::number;
@@ -656,11 +657,13 @@ impl JexlArithmetic {
             return Ok(Some(false));
         }
         // use regexp exclusively
-        if let Some(p) = container.as_host::<crate::java::regex::Pattern>() {
-            return Ok(Some(p.matches(&value.java_to_jstring().to_rust())));
+        if let Some(p) = container.as_host::<crate::value::PatternValue>() {
+            return Ok(Some(p.0.matches(&value.java_to_jstring().to_rust())));
         }
-        if let Value::String(c) = container {
+        // `container instanceof CharSequence`: a StringBuilder is a pattern source too
+        if is_char_sequence(container) {
             let v = value.java_to_jstring();
+            let c = container.java_to_jstring();
             return match crate::java::regex::string_matches(&v.to_rust(), &c.to_rust()) {
                 Ok(b) => Ok(Some(b)),
                 Err(e) => Err(ArithError::PatternSyntax(JString::from(e.get_message()))),
@@ -699,7 +702,7 @@ impl JexlArithmetic {
         if left.is_null() || right.is_null() {
             return Ok(Some(false));
         }
-        if let Value::String(_) = left {
+        if is_char_sequence(left) {
             return Ok(Some(self.to_jstring(left)?.ends_with(&self.to_jstring(right)?)));
         }
         Ok(None)
@@ -713,7 +716,7 @@ impl JexlArithmetic {
         if left.is_null() || right.is_null() {
             return Ok(Some(false));
         }
-        if let Value::String(_) = left {
+        if is_char_sequence(left) {
             return Ok(Some(self.to_jstring(left)?.starts_with(&self.to_jstring(right)?)));
         }
         Ok(None)

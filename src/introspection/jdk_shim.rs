@@ -2457,7 +2457,7 @@ fn join_with(sep: &JString, parts: &[Value]) -> Result<Value, JexlException> {
     jstring(b.build())
 }
 
-fn is_char_sequence(v: &Value) -> bool {
+pub(crate) fn is_char_sequence(v: &Value) -> bool {
     is_assignable(&JClass::named("java.lang.CharSequence"), &JClass::of(v))
 }
 
