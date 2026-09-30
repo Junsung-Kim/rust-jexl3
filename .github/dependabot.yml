@@ -4,7 +4,15 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # a fancy-regex minor changes what it accepts (0.19 takes variable-length lookbehind, which
+      # java.util.regex rejects); upgrade by hand, with tests/java_regex.rs watching
+      - dependency-name: fancy-regex
+        update-types: ["version-update:semver-minor"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # `@stable` needs no bump, and `@1.80` is the MSRV check, not a version to chase
+      - dependency-name: dtolnay/rust-toolchain
