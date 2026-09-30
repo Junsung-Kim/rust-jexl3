@@ -805,7 +805,8 @@ fn tables_for(v: &Value) -> Vec<&'static [Sig]> {
                 tables
             }
             "java.lang.StringBuilder" => vec![STRINGBUILDER, CHARSEQUENCE, OBJECT],
-            n if n.starts_with("org.apache.commons.jexl3.internal.") => vec![RANGE, COLLECTION, OBJECT],
+            // IntegerRange / LongRange -- not every class in that package: a Closure lives there too
+            _ if o.as_any().is::<Range>() => vec![RANGE, COLLECTION, OBJECT],
             _ => match o.as_any().downcast_ref::<MapView>() {
                 Some(view) if view.kind() == ViewKind::Values => vec![MAPVIEW, COLLECTION, OBJECT],
                 Some(_) => vec![MAPVIEW, SET, COLLECTION, OBJECT],

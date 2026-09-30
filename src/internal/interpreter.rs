@@ -1783,6 +1783,10 @@ impl Interpreter {
             ("startsWith", 2) => ob(a.starts_with(&args[0], &args[1])),
             ("endsWith", 2) => ob(a.ends_with(&args[0], &args[1])),
             ("createRange", 2) => v(a.create_range(&args[0], &args[1]).map(Value::object)),
+            // java.lang.Object.equals, inherited by the arithmetic instance: `'abc'.equals()` misses
+            // String.equals(Object) and lands here with the target as the argument. A script can
+            // never hand it the arithmetic object itself, so the answer is always false.
+            ("equals", 1) => Some(Ok(Value::Boolean(false))),
             ("isStrict", 0) => Some(Ok(Value::Boolean(a.is_strict()))),
             ("isNegateStable", 0) => Some(Ok(Value::Boolean(a.is_negate_stable()))),
             ("isPositivizeStable", 0) => Some(Ok(Value::Boolean(a.is_positivize_stable()))),
