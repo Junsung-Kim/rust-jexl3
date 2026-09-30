@@ -346,6 +346,10 @@ impl JexlUberspect for SandboxUberspect {
         self.uberspect.get_operator(operator, args)
     }
 
+    fn load_class(&self, name: &str) -> Option<Value> {
+        self.uberspect.load_class(name)
+    }
+
     fn overloads(&self, operator: JexlOperator) -> bool {
         self.uberspect.overloads(operator)
     }

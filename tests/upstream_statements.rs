@@ -10,6 +10,8 @@
 //!
 //! `JexlTestCase` installs `JexlOptions.setDefaultFlags("-safe", "+lexical")` for the whole
 //! upstream suite; `builder()` below is that default.
+//! The upstream test methods of these classes that are not here are listed, with their
+//! reason, in COMPATIBILITY.md.
 #![allow(clippy::bool_assert_comparison)]
 
 use std::any::Any;
@@ -297,21 +299,25 @@ struct EvalContext {
 }
 
 impl EvalContext {
-    fn new() -> Arc<EvalContext> {
+    fn build() -> EvalContext {
         let mut o = rust_jexl::jexl_options::JexlOptions::new();
         // JexlTestCase: JexlOptions.setDefaultFlags("-safe", "+lexical")
         o.set_safe(false);
         o.set_lexical(true);
-        Arc::new(EvalContext {
+        EvalContext {
             vars: MapContext::new(),
             options: std::sync::RwLock::new(o),
             namespaces: std::collections::HashMap::new(),
-        })
+        }
     }
 
+    fn new() -> Arc<EvalContext> {
+        Arc::new(EvalContext::build())
+    }
+
+    /// port of: ContextNamespaceTest.ContextNs348 — a context that resolves one namespace.
     fn with_namespace(name: &str, ns: Value) -> Arc<EvalContext> {
-        let c = EvalContext::new();
-        let mut c = Arc::try_unwrap(c).ok().expect("unique");
+        let mut c = EvalContext::build();
         c.namespaces.insert(name.to_string(), ns);
         Arc::new(c)
     }
@@ -1283,3 +1289,122 @@ fn test_namespace348d() {
     run348d(&jexl, EvalContext::with_namespace("ns", Value::object(Bean)), "ns : ");
 }
 
+
+
+// ------------------------------------------------------------------ SideEffectTest.SelfArithmetic
+//
+// Java finds the overloads by reflecting on a JexlArithmetic subclass; the port's equivalent is
+// `JexlUberspect::get_operator`, so the same four property overloads are registered there.
+
+/// port of: SideEffectTest.Var
+#[derive(Debug)]
+struct Var(std::sync::Mutex<i32>);
+
+impl HostObject for Var {
+    fn class_name(&self) -> String {
+        "org.apache.commons.jexl3.SideEffectTest$Var".into()
+    }
+    fn java_to_string(&self) -> Option<String> {
+        Some(self.0.lock().unwrap().to_string())
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// port of: SideEffectTest.SelfArithmetic's propertyGet/propertySet/arrayGet/arraySet overloads.
+struct SelfUberspect(Uberspect);
+
+impl rust_jexl::introspection::JexlUberspect for SelfUberspect {
+    fn get_resolvers(
+        &self,
+        op: Option<rust_jexl::jexl_operator::JexlOperator>,
+        obj: &Value,
+    ) -> &'static [rust_jexl::introspection::PropertyResolver] {
+        self.0.get_resolvers(op, obj)
+    }
+    fn get_constructor(&self, h: &Value, args: &[Value]) -> Option<Arc<dyn JexlMethod>> {
+        self.0.get_constructor(h, args)
+    }
+    fn get_method(&self, obj: &Value, m: &str, args: &[Value]) -> Option<Arc<dyn JexlMethod>> {
+        self.0.get_method(obj, m, args)
+    }
+    fn get_property_get_with(
+        &self,
+        r: &[rust_jexl::introspection::PropertyResolver],
+        obj: &Value,
+        id: &Value,
+    ) -> Option<Arc<dyn JexlPropertyGet>> {
+        self.0.get_property_get_with(r, obj, id)
+    }
+    fn get_property_set_with(
+        &self,
+        r: &[rust_jexl::introspection::PropertyResolver],
+        obj: &Value,
+        id: &Value,
+        arg: &Value,
+    ) -> Option<Arc<dyn JexlPropertySet>> {
+        self.0.get_property_set_with(r, obj, id, arg)
+    }
+    fn get_iterator(&self, obj: &Value) -> Option<Box<dyn Iterator<Item = Value> + Send>> {
+        self.0.get_iterator(obj)
+    }
+    fn overloads(&self, operator: rust_jexl::jexl_operator::JexlOperator) -> bool {
+        use rust_jexl::jexl_operator::JexlOperator::*;
+        matches!(operator, PropertyGet | PropertySet | ArrayGet | ArraySet)
+    }
+    fn get_operator(
+        &self,
+        operator: rust_jexl::jexl_operator::JexlOperator,
+        args: &[Value],
+    ) -> Option<Arc<dyn JexlMethod>> {
+        use rust_jexl::jexl_operator::JexlOperator::*;
+        let key = match operator {
+            PropertyGet | PropertySet => "value",
+            ArrayGet | ArraySet => "VALUE",
+            _ => return None,
+        };
+        if args.first()?.as_host::<Var>().is_none() || args.get(1)?.java_to_string() != key {
+            return None;
+        }
+        match operator {
+            PropertyGet | ArrayGet => Some(Arc::new(HostMethod {
+                ret: "java.lang.Object",
+                call: |_, a| Ok(i(*a[0].as_host::<Var>().expect("var").0.lock().unwrap())),
+            })),
+            _ => {
+                to_int(args.get(2)?)?;
+                Some(Arc::new(HostMethod {
+                    ret: "java.lang.Object",
+                    call: |_, a| {
+                        let v = to_int(&a[2]).expect("int");
+                        *a[0].as_host::<Var>().expect("var").0.lock().unwrap() = v;
+                        Ok(i(v))
+                    },
+                }))
+            }
+        }
+    }
+}
+
+// port of: SideEffectTest.testOverrideGetSet
+#[test]
+fn test_override_get_set() {
+    let uber = SelfUberspect(Uberspect::new());
+    let jexl = builder()
+        .cache(64)
+        .arithmetic(rust_jexl::jexl_arithmetic::JexlArithmetic::new(false, None, i32::MIN))
+        .uberspect(Arc::new(uber))
+        .create();
+    let jc = empty_context();
+    let v0 = Value::object(Var(std::sync::Mutex::new(3115)));
+
+    let script = jexl.create_script("(x)->{ x.value}").expect("parse");
+    eq(&ok(script.execute_args(jc.clone(), &[v0.clone()])), &i(3115));
+    let script = jexl.create_script("(x)->{ x['VALUE']}").expect("parse");
+    eq(&ok(script.execute_args(jc.clone(), &[v0.clone()])), &i(3115));
+    let script = jexl.create_script("(x,y)->{ x.value = y}").expect("parse");
+    eq(&ok(script.execute_args(jc.clone(), &[v0.clone(), i(42)])), &i(42));
+    let script = jexl.create_script("(x,y)->{ x['VALUE'] = y}").expect("parse");
+    eq(&ok(script.execute_args(jc, &[v0, i(169)])), &i(169));
+}

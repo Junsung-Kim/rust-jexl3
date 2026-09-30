@@ -711,6 +711,25 @@ fn regex_error<T>(e: regex::JavaRegexError) -> Result<T, JexlException> {
 
 
 /// port of: ClassMap.create - the tables visible on a value, most-derived first.
+/// The methods of a class named at runtime — what a `java.lang.Class` value stands for.
+fn tables_for_class(name: &str) -> Vec<&'static [Sig]> {
+    match name {
+        "java.lang.String" => vec![STRING, STRING_JOIN_ITERABLE, STRING_STATIC, CHARSEQUENCE, COMPARABLE],
+        "java.lang.Character" => vec![CHARACTER, COMPARABLE],
+        "java.lang.Boolean" => vec![BOOLEAN, COMPARABLE],
+        "java.lang.Byte" => vec![BYTE_S, NUMBER, COMPARABLE],
+        "java.lang.Short" => vec![SHORT_S, NUMBER, COMPARABLE],
+        "java.lang.Integer" => vec![INTEGER_S, NUMBER, COMPARABLE],
+        "java.lang.Long" => vec![LONG_S, NUMBER, COMPARABLE],
+        "java.lang.Float" => vec![FLOAT_S, NUMBER, COMPARABLE],
+        "java.lang.Double" => vec![DOUBLE_S, NUMBER, COMPARABLE],
+        "java.math.BigInteger" => vec![BIGINTEGER, NUMBER, COMPARABLE],
+        "java.math.BigDecimal" => vec![BIGDECIMAL, NUMBER, COMPARABLE],
+        "java.lang.StringBuilder" => vec![STRINGBUILDER, CHARSEQUENCE],
+        _ => vec![],
+    }
+}
+
 fn tables_for(v: &Value) -> Vec<&'static [Sig]> {
     match v {
         Value::Null => vec![],
@@ -734,7 +753,16 @@ fn tables_for(v: &Value) -> Vec<&'static [Sig]> {
         // an array class declares nothing; MethodExecutor.discover falls back to ArrayListWrapper
         Value::Array(_) => vec![OBJECT],
         Value::Object(o) => match o.class_name().as_str() {
-            "java.lang.Class" => vec![CLASS, OBJECT],
+            // measured: a Class receiver resolves java.lang.Class's own methods *and* the static
+            // methods of the class it stands for (`x.class.getName()` and `x.class.parseInt('42')`
+            // both work), with Class's own winning a name clash.
+            "java.lang.Class" => {
+                let mut tables = vec![CLASS, OBJECT];
+                if let Some(c) = o.as_any().downcast_ref::<ClassValue>() {
+                    tables.extend(tables_for_class(&c.name));
+                }
+                tables
+            }
             "java.lang.StringBuilder" => vec![STRINGBUILDER, CHARSEQUENCE, OBJECT],
             n if n.starts_with("org.apache.commons.jexl3.internal.") => vec![RANGE, COLLECTION, OBJECT],
             _ => match o.as_any().downcast_ref::<MapView>() {
@@ -1452,7 +1480,19 @@ impl JdkShim {
     }
 }
 
+/// port of: the class loader behind JexlUberspect.getClassLoader() — the classes this shim models.
+pub fn load_class(name: &str) -> Option<Value> {
+    if !tables_for_class(name).is_empty() || CTORS.iter().any(|c| c.name == name) {
+        return Some(ClassValue::of(name));
+    }
+    None
+}
+
 impl JexlUberspect for JdkShim {
+    fn load_class(&self, name: &str) -> Option<Value> {
+        load_class(name)
+    }
+
     fn get_resolvers(&self, op: Option<JexlOperator>, obj: &Value) -> &'static [PropertyResolver] {
         self.strategy.apply(op, obj)
     }

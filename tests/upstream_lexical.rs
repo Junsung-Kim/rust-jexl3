@@ -8,14 +8,14 @@
 //! `JexlTestCase` installs `JexlOptions.setDefaultFlags("-safe", "+lexical")` for the whole
 //! upstream suite; `builder()` below is that default. `LexicalTest.testOptionsPragma` is the one
 //! test that runs under the library defaults instead, and says so.
+//! The upstream test methods of these classes that are not here are listed, with their
+//! reason, in COMPATIBILITY.md.
 #![allow(clippy::bool_assert_comparison)]
 
 use std::any::Any;
-use std::collections::{BTreeSet, HashMap};
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, RwLock};
 
-use rust_jexl::internal::debugger::Debugger;
 use rust_jexl::internal::lexical_scope::LexicalScope;
 use rust_jexl::internal::template_interpreter::StringWriter;
 use rust_jexl::introspection::jdk_shim::{HostIntrospector, JdkShim};
@@ -101,11 +101,6 @@ fn refs(paths: &[&[&str]]) -> BTreeSet<Vec<String>> {
     paths.iter().map(|p| p.iter().map(|x| x.to_string()).collect()).collect()
 }
 
-/// port of: `Script.getParsedText(int)`.
-fn parsed_text(script: &JexlScript, indent: i32) -> String {
-    Debugger::new().data_indent(script.parsed().node(), indent).to_rust()
-}
-
 // ------------------------------------------------------------------ contexts
 
 /// port of: org.apache.commons.jexl3.JexlEvalContext — variables plus mutable engine options.
@@ -114,7 +109,6 @@ fn parsed_text(script: &JexlScript, indent: i32) -> String {
 struct EvalContext {
     vars: MapContext,
     options: RwLock<JexlOptions>,
-    namespaces: HashMap<String, Value>,
     null_namespace: Option<Value>,
     /// AnnotationTest.AnnotationContext: how many annotations were processed, and their names
     annotations: Mutex<(i32, BTreeSet<String>)>,
@@ -124,49 +118,38 @@ struct EvalContext {
 }
 
 impl EvalContext {
-    fn new() -> Arc<EvalContext> {
-        Arc::new(EvalContext {
+    fn build(options: JexlOptions) -> EvalContext {
+        EvalContext {
             vars: MapContext::new(),
-            options: RwLock::new(test_options()),
-            namespaces: HashMap::new(),
+            options: RwLock::new(options),
             null_namespace: None,
             annotations: Mutex::new((0, BTreeSet::new())),
             pragma_processor: false,
             annotation_processor: false,
-        })
+        }
     }
 
-    fn plain_options() -> Arc<EvalContext> {
-        let c = EvalContext::new();
-        *c.options.write().unwrap() = JexlOptions::new();
-        c
+    fn new() -> Arc<EvalContext> {
+        Arc::new(EvalContext::build(test_options()))
     }
 
+    /// port of: VarTest.NumbersContext — the null namespace resolves to an object with methods.
     fn with_null_namespace(ns: Value) -> Arc<EvalContext> {
-        let mut c = EvalContext {
-            vars: MapContext::new(),
-            options: RwLock::new(test_options()),
-            namespaces: HashMap::new(),
-            null_namespace: Some(ns),
-            annotations: Mutex::new((0, BTreeSet::new())),
-            pragma_processor: false,
-            annotation_processor: false,
-        };
-        c.null_namespace = c.null_namespace.take();
+        let mut c = EvalContext::build(test_options());
+        c.null_namespace = Some(ns);
         Arc::new(c)
     }
 
+    /// port of: AnnotationTest.AnnotationContext
     fn annotating() -> Arc<EvalContext> {
-        let c = EvalContext::new();
-        let mut c = Arc::try_unwrap(c).ok().expect("unique");
+        let mut c = EvalContext::build(test_options());
         c.annotation_processor = true;
         Arc::new(c)
     }
 
-    /// port of: LexicalTest.VarContext
+    /// port of: LexicalTest.VarContext (its options are a plain `new JexlOptions()`)
     fn var_context() -> Arc<EvalContext> {
-        let c = EvalContext::plain_options();
-        let mut c = Arc::try_unwrap(c).ok().expect("unique");
+        let mut c = EvalContext::build(JexlOptions::new());
         c.pragma_processor = true;
         Arc::new(c)
     }
@@ -205,12 +188,12 @@ impl JexlContext for EvalContext {
     }
     fn resolve_namespace(&self, name: Option<&str>) -> Option<Value> {
         match name {
-            Some(n) => self.namespaces.get(n).cloned(),
+            Some(_) => None,
             None => self.null_namespace.clone(),
         }
     }
     fn is_namespace_resolver(&self) -> bool {
-        !self.namespaces.is_empty() || self.null_namespace.is_some()
+        self.null_namespace.is_some()
     }
     fn is_pragma_processor(&self) -> bool {
         self.pragma_processor
@@ -977,6 +960,15 @@ fn test_mix() {
     assert_eq!(locals[0], "z");
 }
 
+// port of: VarTest.testSyntacticVariations
+#[test]
+fn test_syntactic_variations() {
+    let script = jexl()
+        .create_script("sum(TOTAL) - partial.sum() + partial['sub'].avg() - sum(partial.sub)")
+        .expect("parse");
+    assert_eq!(script.get_variables().len(), 3);
+}
+
 // ================================================================== LambdaTest
 
 // port of: LambdaTest.testLambda
@@ -1216,3 +1208,4 @@ fn test_safe_pragma() {
     let x = thrown(script.execute(jc));
     assert!(x.is_jexl(), "{}", x.message());
 }
+

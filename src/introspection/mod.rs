@@ -190,4 +190,10 @@ pub trait JexlUberspect: Send + Sync {
         let _ = operator;
         false
     }
+
+    /// port of: JexlUberspect.getClassLoader().loadClass(String) — None is ClassNotFoundException.
+    fn load_class(&self, name: &str) -> Option<Value> {
+        let _ = name;
+        None
+    }
 }

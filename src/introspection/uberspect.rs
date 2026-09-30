@@ -50,6 +50,10 @@ impl JexlUberspect for Uberspect {
         self.shim.as_ref()?.get_method(obj, method, args)
     }
 
+    fn load_class(&self, name: &str) -> Option<Value> {
+        self.shim.as_ref()?.load_class(name)
+    }
+
     fn get_property_get_with(
         &self,
         resolvers: &[PropertyResolver],

@@ -1666,17 +1666,41 @@ impl Interpreter {
         if let Some(ns) = self.context.resolve_namespace(prefix) {
             return Ok(ns);
         }
-        match prefix.and_then(|p| self.functions.get(p)) {
-            Some(v) => Ok(v.clone()),
-            None => match prefix {
-                Some(p) => Err(JexlException::new(
-                    Some(self.handle(node)),
-                    &format!("no such function namespace {}", p),
-                    None,
-                )),
-                None => Ok(Value::Null),
-            },
+        let namespace = match prefix.and_then(|p| self.functions.get(p)) {
+            Some(v) => v.clone(),
+            None => {
+                return match prefix {
+                    Some(p) => Err(JexlException::new(
+                        Some(self.handle(node)),
+                        &format!("no such function namespace {}", p),
+                        None,
+                    )),
+                    None => Ok(Value::Null),
+                }
+            }
+        };
+        // A namespace named by a class -- `#pragma jexl.namespace.i java.lang.Integer` -- is first
+        // asked for an instance (a functor), then used as the class itself, a namespace of static
+        // methods. Without this the String is the namespace and `i:valueOf(x)` silently calls
+        // String.valueOf.
+        let is_class = matches!(&namespace, Value::Object(o) if o.class_name() == "java.lang.Class");
+        if let Value::String(name) = &namespace {
+            let name = name.to_rust();
+            if let Some(ctor) = self.uberspect.get_constructor(&namespace, &[]) {
+                if let Ok(functor) = ctor.invoke(&namespace, &[]) {
+                    return Ok(functor);
+                }
+            }
+            return Ok(self.uberspect.load_class(&name).unwrap_or(Value::Null));
         }
+        if is_class {
+            if let Some(ctor) = self.uberspect.get_constructor(&namespace, &[]) {
+                if let Ok(functor) = ctor.invoke(&namespace, &[]) {
+                    return Ok(functor);
+                }
+            }
+        }
+        Ok(namespace)
     }
 
     // port of: Interpreter.call
