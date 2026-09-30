@@ -110,7 +110,7 @@ impl ParserTokenManager {
                 return -1;
             }
         }
-    }
+    };
     }
 
     // port of: ParserTokenManager.jjStartNfa_0
@@ -276,7 +276,7 @@ impl ParserTokenManager {
                 return self.jj_move_nfa_0(0, 0);
             }
         }
-    }
+    };
     }
 
     // port of: ParserTokenManager.jjMoveStringLiteralDfa1_0
@@ -452,7 +452,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_0(0, active0, active1);
     }
 
@@ -544,7 +544,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_0(1, active0, active1);
     }
 
@@ -597,7 +597,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_0(2, active0, 0i64);
     }
 
@@ -651,7 +651,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_0(3, active0, 0i64);
     }
 
@@ -685,7 +685,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_0(4, active0, 0i64);
     }
 
@@ -719,7 +719,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_0(5, active0, 0i64);
     }
 
@@ -753,7 +753,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_0(6, active0, 0i64);
     }
 
@@ -1217,7 +1217,7 @@ impl ParserTokenManager {
                             break 'sw1;
                         }
                     }
-                }
+                };
                 if !((i != starts_at)) { break; }
             }
         } else if (self.cur_char < 128) {
@@ -1464,7 +1464,7 @@ impl ParserTokenManager {
                             break 'sw2;
                         }
                     }
-                }
+                };
                 if !((i != starts_at)) { break; }
             }
         } else {
@@ -1540,7 +1540,7 @@ impl ParserTokenManager {
                             }
                         }
                     }
-                }
+                };
                 if !((i != starts_at)) { break; }
             }
         }
@@ -1654,7 +1654,7 @@ impl ParserTokenManager {
                 return -1;
             }
         }
-    }
+    };
     }
 
     // port of: ParserTokenManager.jjStartNfa_1
@@ -1813,7 +1813,7 @@ impl ParserTokenManager {
                 return self.jj_move_nfa_1(5, 0);
             }
         }
-    }
+    };
     }
 
     // port of: ParserTokenManager.jjMoveStringLiteralDfa1_1
@@ -1989,7 +1989,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_1(0, active0, active1);
     }
 
@@ -2081,7 +2081,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_1(1, active0, active1);
     }
 
@@ -2134,7 +2134,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_1(2, active0, 0i64);
     }
 
@@ -2188,7 +2188,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_1(3, active0, 0i64);
     }
 
@@ -2222,7 +2222,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_1(4, active0, 0i64);
     }
 
@@ -2256,7 +2256,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_1(5, active0, 0i64);
     }
 
@@ -2290,7 +2290,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_1(6, active0, 0i64);
     }
 
@@ -2563,7 +2563,7 @@ impl ParserTokenManager {
                             break 'sw1;
                         }
                     }
-                }
+                };
                 if !((i != starts_at)) { break; }
             }
         } else if (self.cur_char < 128) {
@@ -2715,7 +2715,7 @@ impl ParserTokenManager {
                             break 'sw2;
                         }
                     }
-                }
+                };
                 if !((i != starts_at)) { break; }
             }
         } else {
@@ -2791,7 +2791,7 @@ impl ParserTokenManager {
                             }
                         }
                     }
-                }
+                };
                 if !((i != starts_at)) { break; }
             }
         }
@@ -2908,7 +2908,7 @@ impl ParserTokenManager {
                 return -1;
             }
         }
-    }
+    };
     }
 
     // port of: ParserTokenManager.jjStartNfa_2
@@ -3067,7 +3067,7 @@ impl ParserTokenManager {
                 return self.jj_move_nfa_2(0, 0);
             }
         }
-    }
+    };
     }
 
     // port of: ParserTokenManager.jjMoveStringLiteralDfa1_2
@@ -3243,7 +3243,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_2(0, active0, active1);
     }
 
@@ -3335,7 +3335,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_2(1, active0, active1);
     }
 
@@ -3388,7 +3388,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_2(2, active0, 0i64);
     }
 
@@ -3442,7 +3442,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_2(3, active0, 0i64);
     }
 
@@ -3476,7 +3476,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_2(4, active0, 0i64);
     }
 
@@ -3510,7 +3510,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_2(5, active0, 0i64);
     }
 
@@ -3544,7 +3544,7 @@ impl ParserTokenManager {
                 break 'sw1;
             }
         }
-    }
+    };
     return self.jj_start_nfa_2(6, active0, 0i64);
     }
 
@@ -4030,7 +4030,7 @@ impl ParserTokenManager {
                             break 'sw1;
                         }
                     }
-                }
+                };
                 if !((i != starts_at)) { break; }
             }
         } else if (self.cur_char < 128) {
@@ -4277,7 +4277,7 @@ impl ParserTokenManager {
                             break 'sw2;
                         }
                     }
-                }
+                };
                 if !((i != starts_at)) { break; }
             }
         } else {
@@ -4353,7 +4353,7 @@ impl ParserTokenManager {
                             }
                         }
                     }
-                }
+                };
                 if !((i != starts_at)) { break; }
             }
         }
@@ -4395,7 +4395,7 @@ impl ParserTokenManager {
                 return false;
             }
         }
-    }
+    };
     }
 
     // port of: ParserTokenManager.jjCanMove_1
@@ -4412,7 +4412,7 @@ impl ParserTokenManager {
                 return false;
             }
         }
-    }
+    };
     }
 
 }

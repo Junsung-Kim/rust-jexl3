@@ -1,0 +1,17 @@
+	\\Q\\E	
+a	\\Qa\\E	a
+a.b	\\Qa.b\\E	a.b
+\\E	\\Q\\E\\\\E\\Q\\E	\\\\E
+a\\Eb	\\Qa\\E\\\\E\\Qb\\E	a\\\\Eb
+\\E\\E	\\Q\\E\\\\E\\Q\\E\\\\E\\Q\\E	\\\\E\\\\E
+a\\Eb\\Ec	\\Qa\\E\\\\E\\Qb\\E\\\\E\\Qc\\E	a\\\\Eb\\\\Ec
+\\Q\\E	\\Q\\Q\\E\\\\E\\Q\\E	\\\\Q\\\\E
+$1	\\Q$1\\E	\\$1
+a$b	\\Qa$b\\E	a\\$b
+\\	\\Q\\\\E	\\\\
+\\\\	\\Q\\\\\\E	\\\\\\\\
+$	\\Q$\\E	\\$
+a\\$b	\\Qa\\$b\\E	a\\\\\\$b
+\uD83D\uDE00	\\Q\uD83D\uDE00\\E	\uD83D\uDE00
+\uAC00	\\Q\uAC00\\E	\uAC00
+\u000A\u0009	\\Q\u000A\u0009\\E	\u000A\u0009

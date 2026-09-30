@@ -77,12 +77,11 @@ class P:
         if self.val(k) == "final":
             k += 1
         v = self.val(k)
-        if v in self.TYPES or re.match(r"^AST[A-Za-z]+$", v):
-            if v == "LinkedList" and self.val(k + 1) == "<":
-                return True
-            nk, nv = self.peek(k + 1)
-            return nk == "id"
-        return False
+        if self.peek(k)[0] != "id" or v in ("return", "throw", "new", "break", "continue", "case", "else"):
+            return False
+        if v == "LinkedList" and self.val(k + 1) == "<":
+            return True
+        return self.peek(k + 1)[0] == "id" and self.val(k + 2) in ("=", ";", ",")
 
     def block(self):
         self.expect("{")
@@ -120,8 +119,11 @@ class P:
             return ("dowhile", b, c)
         if v == "for":
             self.next(); self.expect("(")
-            init = None if self.val() == ";" else self.expr()
-            self.expect(";")
+            if self.is_decl():
+                init = ("stmt", self.stmt())
+            else:
+                init = None if self.val() == ";" else self.expr()
+                self.expect(";")
             cond = None if self.val() == ";" else self.expr()
             self.expect(";")
             upd = None if self.val() == ")" else self.expr()
@@ -263,6 +265,9 @@ class P:
             return ("paren", e)
         if v == "new":
             ty = self.next()[1]
+            while self.val() == "." and self.peek(1)[0] == "id":
+                self.next()
+                ty += "." + self.next()[1]
             if self.accept("["):
                 n = self.expr(); self.expect("]")
                 return ("newarr", ty, n)
@@ -308,10 +313,14 @@ class P:
 
 # ----------------------------------------------------------------------------- helpers
 
+RUST_KEYWORDS = {"continue", "break", "loop", "match", "type", "fn", "mod", "use", "impl", "move", "ref", "self", "where"}
+
+
 def snake(name):
     s = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
     s = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", s)
-    return s.lower()
+    s = s.lower()
+    return "r#" + s if s in RUST_KEYWORDS else s
 
 
 def upper(name):
@@ -680,7 +689,9 @@ class Emitter:
             self.breakables.pop()
         elif k == "for":
             init, cond, upd, body = st[1:]
-            if init is not None:
+            if init is not None and init[0] == "stmt":
+                self.s(init[1])
+            elif init is not None:
                 self.s(("expr", init))
             self.breakables.append(("for", lab))
             if cond is None:
@@ -729,7 +740,7 @@ class Emitter:
         self.ind -= 1
         self.w("}")
         self.ind -= 1
-        self.w("}")
+        self.w("};")
         self.breakables.pop()
 
     def terminates(self, st):

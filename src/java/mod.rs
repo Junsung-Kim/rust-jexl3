@@ -3,3 +3,6 @@
 pub mod big_decimal;
 pub mod hash_map;
 pub mod number;
+pub mod string;
+
+pub mod regex;

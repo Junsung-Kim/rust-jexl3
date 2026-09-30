@@ -226,6 +226,7 @@ public final class Oracle {
                             case "locals": r.put("locals", strings(script.getLocalVariables())); break;
                             case "pragmas": r.put("pragmas", encode(script.getPragmas())); break;
                             case "parsed": r.put("parsed", script.getParsedText()); break;
+                            case "ast": r.put("ast", ast(script)); break;
                             case "exec": {
                                 try {
                                     Object v = "script".equals(kind)
@@ -341,6 +342,87 @@ public final class Oracle {
         } catch (ReflectiveOperationException x) {
             throw new IllegalStateException(x);
         }
+        return out;
+    }
+
+    // ---------------------------------------------------------------- AST dump (parser differential tests)
+
+    static Object ast(JexlScript script) {
+        try {
+            java.lang.reflect.Field f = org.apache.commons.jexl3.internal.Script.class.getDeclaredField("script");
+            f.setAccessible(true);
+            return node((org.apache.commons.jexl3.parser.JexlNode) f.get(script));
+        } catch (ReflectiveOperationException x) {
+            throw new IllegalStateException(x);
+        }
+    }
+
+    static Object node(org.apache.commons.jexl3.parser.JexlNode n) {
+        List<Object> out = new ArrayList<>();
+        out.add(n.getClass().getSimpleName());
+        out.add(n.getLine());
+        out.add(n.getColumn());
+        Map<String, Object> a = new LinkedHashMap<>();
+        if (n.isConstant()) a.put("const", Boolean.TRUE);
+        if (n instanceof org.apache.commons.jexl3.parser.ASTIdentifier) {
+            org.apache.commons.jexl3.parser.ASTIdentifier id = (org.apache.commons.jexl3.parser.ASTIdentifier) n;
+            a.put("name", id.getName());
+            a.put("symbol", id.getSymbol());
+            if (id.getNamespace() != null) a.put("ns", id.getNamespace());
+            if (id.isRedefined()) a.put("redefined", Boolean.TRUE);
+            if (id.isShaded()) a.put("shaded", Boolean.TRUE);
+            if (id.isCaptured()) a.put("captured", Boolean.TRUE);
+        } else if (n instanceof org.apache.commons.jexl3.parser.ASTIdentifierAccess) {
+            org.apache.commons.jexl3.parser.ASTIdentifierAccess id = (org.apache.commons.jexl3.parser.ASTIdentifierAccess) n;
+            a.put("name", id.getName());
+            a.put("id", encode(id.getIdentifier()));
+            if (id.isSafe()) a.put("safe", Boolean.TRUE);
+            if (id.isExpression()) a.put("expr", Boolean.TRUE);
+        } else if (n instanceof org.apache.commons.jexl3.parser.ASTNumberLiteral) {
+            org.apache.commons.jexl3.parser.ASTNumberLiteral nl = (org.apache.commons.jexl3.parser.ASTNumberLiteral) n;
+            a.put("value", encode(nl.getLiteral()));
+            a.put("class", nl.getLiteralClass().getSimpleName());
+            a.put("image", nl.toString());
+        } else if (n instanceof org.apache.commons.jexl3.parser.ASTStringLiteral) {
+            a.put("value", ((org.apache.commons.jexl3.parser.ASTStringLiteral) n).getLiteral());
+        } else if (n instanceof org.apache.commons.jexl3.parser.ASTJxltLiteral) {
+            a.put("value", ((org.apache.commons.jexl3.parser.ASTJxltLiteral) n).getLiteral());
+        } else if (n instanceof org.apache.commons.jexl3.parser.ASTRegexLiteral) {
+            a.put("value", n.toString());
+        } else if (n instanceof org.apache.commons.jexl3.parser.ASTAnnotation) {
+            a.put("name", ((org.apache.commons.jexl3.parser.ASTAnnotation) n).getName());
+        }
+        if (n instanceof org.apache.commons.jexl3.parser.ASTJexlScript) {
+            org.apache.commons.jexl3.parser.ASTJexlScript sc = (org.apache.commons.jexl3.parser.ASTJexlScript) n;
+            a.put("args", sc.getArgCount());
+            if (sc.getScope() != null) {
+                a.put("symbols", strings(sc.getSymbols()));
+                a.put("params", strings(sc.getParameters()));
+                a.put("locals", strings(sc.getLocalVariables()));
+                List<Object> caps = new ArrayList<>();
+                String[] syms = sc.getSymbols();
+                for (int i = 0; i < syms.length; ++i) if (sc.isCapturedSymbol(i)) caps.add(i);
+                a.put("captured", caps);
+            }
+            if (sc.getPragmas() != null && !sc.getPragmas().isEmpty()) a.put("pragmas", encode(sc.getPragmas()));
+        }
+        if (n instanceof org.apache.commons.jexl3.parser.JexlLexicalNode) {
+            int c = ((org.apache.commons.jexl3.parser.JexlLexicalNode) n).getSymbolCount();
+            if (c > 0) {
+                List<Object> ls = new ArrayList<>();
+                org.apache.commons.jexl3.internal.LexicalScope scope = ((org.apache.commons.jexl3.parser.JexlLexicalNode) n).getLexicalScope();
+                for (int i = 0; i < 128; ++i) if (scope.hasSymbol(i)) ls.add(i);
+                a.put("lexical", ls);
+            }
+        }
+        out.add(a);
+        List<Object> kids = new ArrayList<>();
+        for (int i = 0; i < n.jjtGetNumChildren(); ++i) {
+            org.apache.commons.jexl3.parser.JexlNode c = n.jjtGetChild(i);
+            if (c.jjtGetParent() != n) a.put("badparent", i);
+            kids.add(node(c));
+        }
+        out.add(kids);
         return out;
     }
 
