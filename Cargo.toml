@@ -9,7 +9,12 @@ repository = "https://github.com/OWNER/rust-jexl"
 readme = "README.md"
 keywords = ["jexl", "expression", "script", "interpreter", "template"]
 categories = ["parser-implementations", "template-engine"]
-exclude = ["oracle/target", "corpus/private*", "fuzz/corpus", "fuzz/artifacts", "target"]
+# The differential fixtures are 60MB of oracle output: they prove the port against the jar but
+# are of no use to a consumer, and they put the package over the registry's size limit.
+exclude = [
+    "tests/data", "oracle", "fuzz", "tools", "runs",
+    "corpus/private*", "target",
+]
 
 [lib]
 name = "rust_jexl"
