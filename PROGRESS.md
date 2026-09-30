@@ -21,7 +21,11 @@ Method: TDD. Each subsystem: oracle-derived cases / ported upstream tests commit
 | java.math.BigDecimal / number text | GREEN | `cargo test --test java_number` (9 tests over JVM-generated fixtures) |
 | java.util.HashMap / HashSet order | GREEN | `cargo test --test java_hash_map` (6 tests, 20,700 JVM sequences) |
 | parser (Parser.jjt productions, JexlParser, FeatureController, getVariables) | GREEN | `cargo test --test parser_oracle` 8,000 cases, 0 mismatches |
-| java.util.regex | GREEN for the parser/arithmetic suites; its own unit suite still red (subagent) | `cargo test --test java_regex` |
+| Debugger (getParsedText, exception snippets) | GREEN | `cargo test --test debugger_oracle` 17,500 CI cases (8,000 parsed + 8,000 round-trip + 1,500 API over 19,927 nodes); local campaign 112,000+; llvm-cov 97.4% |
+| Interpreter, Operators, Engine, contexts, public API | 6,000-case suite: 140 differ, 132 of them scripts with a backtick literal (JXLT) | `cargo test --test exec_oracle` |
+| java.util.regex | GREEN for the suites that use it | `cargo test --test java_regex` |
+| JDK shim (introspection) | in progress (subagent) | `cargo test --test spi_oracle` |
+| JXLT template engine | in progress (subagent) | |
 | JexlArithmetic (+ IntegerRange/LongRange) | GREEN | `cargo test --test arith_oracle` 12,000 CI cases; local 150,000-case campaign 0 mismatches |
 
 ### Parser mismatch ledger (see MISMATCHES.md)
@@ -37,12 +41,25 @@ Classes found and fixed while driving 4,191 -> 164:
    while `Double.equals`/`hashCode` use the canonical `doubleToLongBits`.
 8. `IntegerRange`/`LongRange` iterators post-increment a bounded cursor, so a range whose max is
    the type's MAX_VALUE never terminates. Ported as-is (Java hangs the same way).
-9. **Parser state leaks across parses**: a lexical error raised inside a semantic lookahead
+9. Java catches only `ArithmeticException` around each operator: a `NumberFormatException`,
+   `ClassCastException` or `NullPointerException` from a coercion escapes the interpreter raw.
+10. `Interpreter.interpret` swallows a `JexlException` when the engine is silent, but a raw JDK
+   throwable still propagates.
+11. Reading a register (`#1`) in a script that has no scope NPEs inside `Frame.has(int)`.
+12. The `if` statement's `catch (ArithmeticException)` wraps its *branches* too, not just the test.
+13. **Parser state leaks across parses**: a lexical error raised inside a semantic lookahead
    (`isDeclaredNamespace(getToken(1), getToken(2))`) leaves `jj_lookingAhead` true, so the next
    parse reads `jj_scanpos` from the previous token chain and the root node gets a stale
    line/column. Reproduced and ported (the token arena keeps that chain alive).
 
 ## How to rerun
+### Execution
+```
+python3 tools/fuzz_gen.py 6000 31 --ops exec > /tmp/ex.jsonl && python3 tools/run_oracle.py /tmp/ex.jsonl /tmp/ex_exp.jsonl
+EXEC_CASES=/tmp/ex.jsonl EXEC_EXPECTED=/tmp/ex_exp.jsonl cargo test --release --test exec_oracle
+```
+(`tools/run_oracle.py` restarts the JVM when a script wedges it and marks that case `timeout`.)
+
 ### Arithmetic
 ```
 python3 tools/gen_arith_cases.py 150000 99 > /tmp/ar.jsonl && oracle/target/oracle < /tmp/ar.jsonl > /tmp/ar_exp.jsonl

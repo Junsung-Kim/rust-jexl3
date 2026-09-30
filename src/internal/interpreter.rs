@@ -458,13 +458,9 @@ impl Interpreter {
                         Ok(Value::Null)
                     }
                 }
-                _ => {
-                    if !self.is_silent() {
-                        Err(e)
-                    } else {
-                        Ok(Value::Null)
-                    }
-                }
+                // Java catches JexlException here; a raw JDK throwable escapes even when silent
+                _ if e.is_jexl() && self.is_silent() => Ok(Value::Null),
+                _ => Err(e),
             },
         }
     }
@@ -595,6 +591,7 @@ impl Interpreter {
                 }
                 match self.arithmetic.complement(&arg) {
                     Ok(v) => Ok(v),
+                    Err(e) if !is_arithmetic_exception(&e) => Err(self.arith_exception(node, e)),
                     Err(e) => Err(self.op_exception(node, "~ error", e, &arg, &Value::Null)),
                 }
             }
@@ -606,6 +603,7 @@ impl Interpreter {
                 }
                 match self.arithmetic.not(&val) {
                     Ok(v) => Ok(v),
+                    Err(e) if !is_arithmetic_exception(&e) => Err(self.arith_exception(node, e)),
                     Err(e) => Err(self.op_exception(node, "! error", e, &val, &Value::Null)),
                 }
             }
@@ -737,6 +735,7 @@ impl Interpreter {
         };
         match outcome {
             Ok(v) => Ok(v),
+            Err(e) if !is_arithmetic_exception(&e) => Err(self.arith_exception(node, e)),
             Err(e) => Err(self.op_exception(node, "!= error", e, &left, &right)),
         }
     }
@@ -870,8 +869,17 @@ impl Interpreter {
         self.accept(node.child(1), data)
     }
 
-    // port of: Interpreter.visit(ASTIfStatement)
+    // port of: Interpreter.visit(ASTIfStatement) — the Java try block wraps the branches too
     fn visit_if(&mut self, node: NodeRef<'_>) -> R {
+        match self.visit_if_body(node) {
+            Err(e) if is_arithmetic_throwable(&e) => {
+                Err(JexlException::new(Some(self.handle(node.child(0))), "if error", Some(e)))
+            }
+            other => other,
+        }
+    }
+
+    fn visit_if_body(&mut self, node: NodeRef<'_>) -> R {
         let num_children = node.num_children();
         let mut if_else = 0;
         while if_else + 1 < num_children {
@@ -879,10 +887,7 @@ impl Interpreter {
             match self.arithmetic.to_boolean(&condition) {
                 Ok(true) => return self.accept(node.child(if_else + 1), None),
                 Ok(false) => {}
-                Err(e) => {
-                    let cause = self.arith_exception(node, e);
-                    return Err(JexlException::new(Some(self.handle(node.child(0))), "if error", Some(cause)));
-                }
+                Err(e) => return Err(self.arith_exception(node, e)),
             }
             if_else += 2;
         }
@@ -1699,7 +1704,7 @@ impl Interpreter {
             }
             if let Some(f) = &functor_value {
                 if let Some(script) = f.as_host::<Closure>() {
-                    return script.execute(self, &argv);
+                    return self.invoked(node, "", script.execute(self, &argv));
                 }
                 if let Some(name) = &method_name {
                     if let Some(vm) = self.uberspect.get_method(f, name, &argv) {
@@ -1793,6 +1798,12 @@ pub(crate) fn debug_render(node: NodeRef<'_>, depth: i32) -> Option<String> {
 enum Callee<'a> {
     Node(NodeRef<'a>),
     Value(Value),
+}
+
+/// Whether an escaped throwable is a `java.lang.ArithmeticException` (what a catch block sees).
+fn is_arithmetic_throwable(e: &JexlException) -> bool {
+    matches!(e.kind(), ExceptionKind::Java { class }
+        if class == "java.lang.ArithmeticException" || class == "JexlArithmetic$NullOperand")
 }
 
 /// The JDK's helpful NullPointerException when a script with no scope reads a register.

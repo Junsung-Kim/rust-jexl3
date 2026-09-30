@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use num_bigint::{BigInt, Sign};
 use num_traits::{One, Signed, Zero};
 
-use crate::internal::range::Range;
+use crate::internal::range::{Direction, Range, Width};
 use crate::java::big_decimal::{BigDecimal, MathError, RoundingMode};
 use crate::java::hash_map::{JHashMap, JHashSet};
 use crate::java::number;
@@ -127,6 +127,47 @@ impl crate::value::HostObject for ClassValue {
     fn as_any(&self) -> &dyn Any {
         self
     }
+}
+
+/// port of: IntegerRange.Ascending / LongRange.Descending.
+///
+/// `Range::iter()` borrows its range, and `getIterator` has to hand back an owned iterator, so the
+/// eight-line cursor rule is repeated here. It must stay in step with `internal::range::RangeIter`
+/// (post-increment, so a range whose max is the type's MAX_VALUE never ends - as in Java).
+fn range_iterator(r: &Range) -> Box<dyn Iterator<Item = Value> + Send> {
+    let (width, direction, min, max) = (r.width, r.direction, r.min, r.max);
+    let wrap = move |v: i64| match width {
+        Width::Integer => Value::Integer(v as i32),
+        Width::Long => Value::Long(v),
+    };
+    let mut cursor = match direction {
+        Direction::Ascending => min,
+        Direction::Descending => max,
+    };
+    Box::new(std::iter::from_fn(move || match direction {
+        Direction::Ascending => {
+            if cursor > max {
+                return None;
+            }
+            let v = wrap(cursor);
+            cursor = match width {
+                Width::Integer => (cursor as i32).wrapping_add(1) as i64,
+                Width::Long => cursor.wrapping_add(1),
+            };
+            Some(v)
+        }
+        Direction::Descending => {
+            if cursor < min {
+                return None;
+            }
+            let v = wrap(cursor);
+            cursor = match width {
+                Width::Integer => (cursor as i32).wrapping_sub(1) as i64,
+                Width::Long => cursor.wrapping_sub(1),
+            };
+            Some(v)
+        }
+    }))
 }
 
 /// port of: the JDK collection iterators (java.util.ArrayList$Itr and friends).
@@ -1530,7 +1571,8 @@ impl JexlUberspect for JdkShim {
                     return Some(Box::new(rest.into_iter()));
                 }
                 if let Some(r) = o.as_any().downcast_ref::<Range>() {
-                    return Some(Box::new(r.iter().collect::<Vec<_>>().into_iter()));
+                    // lazily, like Java: a range whose max is the type's MAX_VALUE never ends
+                    return Some(range_iterator(r));
                 }
                 None
             }
@@ -3327,7 +3369,12 @@ const RANGE: &[Sig] = sigs!("org.apache.commons.jexl3.internal.IntegerRange";
     "contains"("java.lang.Object") -> "boolean" =
         |o, a| boolean(o.as_host::<Range>().map(|r| r.contains(&a[0])).unwrap_or(false));
     "iterator"() -> "java.util.Iterator" = |o, _| {
-        let items: Vec<Value> = o.as_host::<Range>().map(|r| r.iter().take(1024).collect()).unwrap_or_default();
+        let items: Vec<Value> = match o.as_host::<Range>() {
+            // ponytail: a range iterator taken as a value is snapshot-bounded; the `for` loop
+            // path (getIterator) is lazy, which is the one that matters
+            Some(r) => r.iter().take(1024).collect(),
+            None => Vec::new(),
+        };
         Ok(JIterator::new("java.util.Iterator", items))
     };
 );
@@ -3625,7 +3672,6 @@ fn static_field(class: &str, name: &str) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::internal::range::{Direction, Width};
     use crate::introspection::POJO;
 
     fn shim() -> JdkShim {

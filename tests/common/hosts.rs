@@ -101,6 +101,10 @@ fn nfe(text: &str) -> JexlException {
     JexlException::java("java.lang.NumberFormatException", Some(format!("For input string: \"{}\"", text)))
 }
 
+fn is_string_arg(v: &Value) -> bool {
+    matches!(v, Value::String(_) | Value::Null)
+}
+
 fn is_null_like(v: &Value) -> bool {
     v.is_null() || v.as_host::<JsonNull>().is_some()
 }
@@ -146,6 +150,13 @@ impl HostIntrospector for TestHosts {
                 ("joinWithPipe", _) => HostMethod {
                     ret: "java.lang.String",
                     call: |_, a| {
+                        // Object... : a lone null argument *is* the array, so Java NPEs on length
+                        if a.len() == 1 && a[0].is_null() {
+                            return Err(JexlException::java(
+                                "java.lang.NullPointerException",
+                                Some("Cannot read the array length because \"args\" is null".into()),
+                            ));
+                        }
                         let parts: Vec<String> = a.iter().map(|v| v.java_to_string()).collect();
                         Ok(Value::string(&parts.join("|")))
                     },
