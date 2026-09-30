@@ -126,10 +126,10 @@ Differences from Java JEXL are the most valuable report: [CONTRIBUTING.md](CONTR
 how to pin one down against the jar. This project follows the
 [Contributor Covenant](CODE_OF_CONDUCT.md).
 
-## Publishing
+## Releases
 
-Not published yet. [PUBLISHING.md](PUBLISHING.md) is the runbook: the repository URL, the GitHub
-remote and the crates.io release, each as the command that does it.
+Published on [crates.io](https://crates.io/crates/rust-jexl3); changes are in
+[CHANGELOG.md](CHANGELOG.md), and [PUBLISHING.md](PUBLISHING.md) is the release runbook.
 
 ## License
 
