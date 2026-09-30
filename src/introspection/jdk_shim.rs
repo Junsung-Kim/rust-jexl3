@@ -2940,9 +2940,16 @@ const BIGDECIMAL: &[Sig] = sigs!("java.math.BigDecimal";
     "negate"() -> "java.math.BigDecimal" = |o, _| Ok(Value::big_decimal(arg_bigdec(o).negate()));
     "abs"() -> "java.math.BigDecimal" = |o, _| Ok(Value::big_decimal(arg_bigdec(o).abs()));
     "ulp"() -> "java.math.BigDecimal" = |o, _| Ok(Value::big_decimal(arg_bigdec(o).ulp()));
-    "pow"("int") -> "java.math.BigDecimal" = |o, a| match arg_bigdec(o).pow(arg_i32(&a[0])) {
-        Ok(v) => Ok(Value::big_decimal(v)),
-        Err(e) => math(e),
+    "pow"("int") -> "java.math.BigDecimal" = |o, a| {
+        let x = arg_bigdec(o);
+        let n = arg_i64(&a[0]);
+        if (0..=999_999_999).contains(&n) && x.unscaled_value().bits() as i64 * n > i32::MAX as i64 {
+            return arithmetic("BigInteger would overflow supported range");
+        }
+        match x.pow(arg_i32(&a[0])) {
+            Ok(v) => Ok(Value::big_decimal(v)),
+            Err(e) => math(e),
+        }
     };
     "scale"() -> "int" = |o, _| int(arg_bigdec(o).scale());
     "precision"() -> "int" = |o, _| int(arg_bigdec(o).precision() as i32);
@@ -2952,17 +2959,29 @@ const BIGDECIMAL: &[Sig] = sigs!("java.math.BigDecimal";
         |o, _| Ok(Value::big_decimal(arg_bigdec(o).strip_trailing_zeros()));
     "toPlainString"() -> "java.lang.String" = |o, _| jstring(JString::from(arg_bigdec(o).to_plain_string()));
     "toBigInteger"() -> "java.math.BigInteger" = |o, _| Ok(Value::big_integer(arg_bigdec(o).to_big_integer()));
-    "movePointLeft"("int") -> "java.math.BigDecimal" = |o, a| match arg_bigdec(o).move_point_left(arg_i32(&a[0])) {
-        Ok(v) => Ok(Value::big_decimal(v)),
-        Err(e) => math(e),
+    "movePointLeft"("int") -> "java.math.BigDecimal" = |o, a| {
+        let x = arg_bigdec(o);
+        let new_scale = x.scale() as i64 + arg_i64(&a[0]);
+        ten_power_ok(-new_scale)?;
+        match x.move_point_left(arg_i32(&a[0])) {
+            Ok(v) => Ok(Value::big_decimal(v)),
+            Err(e) => math(e),
+        }
     };
-    "movePointRight"("int") -> "java.math.BigDecimal" = |o, a| match arg_bigdec(o).move_point_right(arg_i32(&a[0])) {
-        Ok(v) => Ok(Value::big_decimal(v)),
-        Err(e) => math(e),
+    "movePointRight"("int") -> "java.math.BigDecimal" = |o, a| {
+        let x = arg_bigdec(o);
+        let new_scale = x.scale() as i64 - arg_i64(&a[0]);
+        ten_power_ok(-new_scale)?;
+        match x.move_point_right(arg_i32(&a[0])) {
+            Ok(v) => Ok(Value::big_decimal(v)),
+            Err(e) => math(e),
+        }
     };
     "setScale"("int", "int") -> "java.math.BigDecimal" = |o, a| {
         let mode = rounding_mode(arg_i32(&a[1]))?;
-        match arg_bigdec(o).set_scale(arg_i32(&a[0]), mode) {
+        let x = arg_bigdec(o);
+        ten_power_ok(arg_i64(&a[0]) - x.scale() as i64)?;
+        match x.set_scale(arg_i32(&a[0]), mode) {
             Ok(v) => Ok(Value::big_decimal(v)),
             Err(e) => math(e),
         }
@@ -2980,6 +2999,7 @@ const BIGDECIMAL: &[Sig] = sigs!("java.math.BigDecimal";
     "divide"("java.math.BigDecimal", "int", "int") -> "java.math.BigDecimal" = |o, a| {
         nn(&a[0])?;
         let mode = rounding_mode(arg_i32(&a[2]))?;
+        ten_power_ok(arg_i64(&a[1]))?;
         match arg_bigdec(o).divide_scale(&arg_bigdec(&a[0]), arg_i32(&a[1]), mode) {
             Ok(v) => Ok(Value::big_decimal(v)),
             Err(e) => math(e),
@@ -2999,11 +3019,14 @@ const BIGDECIMAL: &[Sig] = sigs!("java.math.BigDecimal";
     "plus"("java.math.MathContext") -> "java.math.BigDecimal" = context_arg;
     "round"("java.math.MathContext") -> "java.math.BigDecimal" = context_arg;
     "sqrt"("java.math.MathContext") -> "java.math.BigDecimal" = context_arg;
-    "setScale"("int") -> "java.math.BigDecimal" =
-        |o, a| match arg_bigdec(o).set_scale(arg_i32(&a[0]), RoundingMode::Unnecessary) {
+    "setScale"("int") -> "java.math.BigDecimal" = |o, a| {
+        let x = arg_bigdec(o);
+        ten_power_ok(arg_i64(&a[0]) - x.scale() as i64)?;
+        match x.set_scale(arg_i32(&a[0]), RoundingMode::Unnecessary) {
             Ok(v) => Ok(Value::big_decimal(v)),
             Err(e) => math(e),
-        };
+        }
+    };
     "valueOf"("long") -> "java.math.BigDecimal" = |_, a| Ok(Value::big_decimal(BigDecimal::from_i64(arg_i64(&a[0]))));
     "valueOf"("long", "int") -> "java.math.BigDecimal" =
         |_, a| Ok(Value::big_decimal(BigDecimal::new(BigInt::from(arg_i64(&a[0])), arg_i32(&a[1]))));
@@ -3017,6 +3040,19 @@ const BIGDECIMAL: &[Sig] = sigs!("java.math.BigDecimal";
 /// Java's; no value in the model can supply one, so they are only ever reached with a null.
 fn context_arg(_obj: &Value, _args: &[Value]) -> Result<Value, JexlException> {
     npe0()
+}
+
+/// A BigInteger magnitude is an `int[]`, so it tops out at 2^31 bits - about this many decimal
+/// digits. Raising a BigDecimal's scale multiplies by a power of ten, and Java reports the
+/// overflow rather than attempting the allocation; `java::big_decimal` does not check, so the
+/// guard lives here (see COMPATIBILITY.md).
+const MAX_TEN_POWER: i64 = 646_456_993;
+
+fn ten_power_ok(n: i64) -> Result<(), JexlException> {
+    if n > MAX_TEN_POWER {
+        return arithmetic("BigInteger would overflow supported range").map(|_: Value| ());
+    }
+    Ok(())
 }
 
 /// port of: RoundingMode.valueOf(int) as BigDecimal's legacy int overloads use it

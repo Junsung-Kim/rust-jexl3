@@ -17,19 +17,31 @@ use crate::parser::string_parser;
 
 pub struct Debugger {
     /// The builder to compose messages (UTF-16, like Java's StringBuilder).
-    builder: Vec<u16>,
+    pub(crate) builder: Vec<u16>,
     /// The cause of the issue to debug.
-    cause: Option<NodeId>,
+    pub(crate) cause: Option<NodeId>,
     /// The starting character location offset of the cause in the builder.
-    start: i32,
+    pub(crate) start: i32,
     /// The ending character location offset of the cause in the builder.
-    end: i32,
+    pub(crate) end: i32,
     /// The indentation level.
-    indent_level: i32,
+    pub(crate) indent_level: i32,
     /// Perform indentation?.
-    indent: i32,
+    pub(crate) indent: i32,
     /// accept() relative depth.
-    depth: i32,
+    pub(crate) depth: i32,
+    /// port of: TemplateDebugger — Java subclasses Debugger to override `acceptStatement` and
+    /// `visit(ASTBlock)`; this port carries the subclass as a hook instead.
+    pub(crate) tmpl: Option<std::sync::Arc<dyn DebuggerHook>>,
+}
+
+/// The two Debugger methods `TemplateDebugger` overrides.
+/// See `crate::internal::template_debugger`.
+pub trait DebuggerHook: Send + Sync {
+    /// TemplateDebugger.acceptStatement — true when the statement was rendered by the hook.
+    fn accept_statement(&self, dbg: &mut Debugger, child: NodeRef<'_>) -> bool;
+    /// TemplateDebugger.visit(ASTBlock)'s extra `newJexlLine()` before the closing brace.
+    fn close_block(&self, dbg: &mut Debugger);
 }
 
 impl Default for Debugger {
@@ -41,7 +53,7 @@ impl Default for Debugger {
 impl Debugger {
     // port of: Debugger()
     pub fn new() -> Debugger {
-        Debugger { builder: Vec::new(), cause: None, start: 0, end: 0, indent_level: 0, indent: 2, depth: i32::MAX }
+        Debugger { builder: Vec::new(), cause: None, start: 0, end: 0, indent_level: 0, indent: 2, depth: i32::MAX, tmpl: None }
     }
 
     // port of: Debugger.reset
@@ -53,6 +65,7 @@ impl Debugger {
         self.indent_level = 0;
         self.indent = 2;
         self.depth = i32::MAX;
+        self.tmpl = None;
     }
 
     // port of: Debugger.debug(JexlNode)
@@ -142,19 +155,19 @@ impl Debugger {
 
     // ------------------------------------------------------------------------------ the builder
 
-    fn len(&self) -> i32 {
+    pub(crate) fn len(&self) -> i32 {
         self.builder.len() as i32
     }
 
-    fn ch(&mut self, c: char) {
+    pub(crate) fn ch(&mut self, c: char) {
         self.builder.push(c as u16);
     }
 
-    fn s(&mut self, s: &str) {
+    pub(crate) fn s(&mut self, s: &str) {
         self.builder.extend(s.encode_utf16());
     }
 
-    fn u(&mut self, u: &[u16]) {
+    pub(crate) fn u(&mut self, u: &[u16]) {
         self.builder.extend_from_slice(u);
     }
 
@@ -165,7 +178,7 @@ impl Debugger {
     // ------------------------------------------------------------------------ the visitor plumbing
 
     // port of: Debugger.accept
-    fn accept(&mut self, node: NodeRef<'_>) {
+    pub(crate) fn accept(&mut self, node: NodeRef<'_>) {
         if self.depth <= 0 {
             self.s("...");
             return;
@@ -182,7 +195,16 @@ impl Debugger {
     }
 
     // port of: Debugger.acceptStatement
-    fn accept_statement(&mut self, child: NodeRef<'_>) {
+    pub(crate) fn accept_statement(&mut self, child: NodeRef<'_>) {
+        if let Some(h) = self.tmpl.clone() {
+            if h.accept_statement(self, child) {
+                return;
+            }
+        }
+        self.accept_statement_base(child);
+    }
+
+    pub(crate) fn accept_statement_base(&mut self, child: NodeRef<'_>) {
         let parent = child.parent();
         if self.indent > 0 && parent.map(|p| p.is(JJTBLOCK) || p.is_script()).unwrap_or(false) {
             for _ in 0..self.indent_level {
@@ -349,6 +371,9 @@ impl Debugger {
                 }
                 for i in 0..node.num_children() {
                     self.accept_statement(node.child(i));
+                }
+                if let Some(h) = self.tmpl.clone() {
+                    h.close_block(self);
                 }
                 if self.indent > 0 {
                     self.indent_level -= 1;

@@ -133,6 +133,34 @@ impl Parser {
     ) -> Result<Parsed, JexlException> {
         self.ast = Ast::new();
         let scope = scope_params.map(|p| self.ast.scopes.create(None, Some(p)));
+        self.parse_prepared(jexl_info, jexl_features, jexl_src, scope)
+    }
+
+    /// port of: Parser.parse(JexlInfo, JexlFeatures, String, Scope) with a caller-supplied Scope.
+    /// Java hands `TemplateEngine.parseExpression` the *same* Scope object the template script was
+    /// parsed with, so a `${x}` sees the template's symbols. Scopes live in the tree's arena here,
+    /// so the caller's whole arena is copied in first: every ScopeId (and every symbol number)
+    /// then means the same thing in both trees, and the sub-parse only appends to it.
+    pub fn parse_in_scope(
+        &mut self,
+        jexl_info: Option<JexlInfo>,
+        jexl_features: &JexlFeatures,
+        jexl_src: &str,
+        scopes: &crate::internal::scope::Scopes,
+        scope: Option<ScopeId>,
+    ) -> Result<Parsed, JexlException> {
+        self.ast = Ast::new();
+        self.ast.scopes = scopes.clone();
+        self.parse_prepared(jexl_info, jexl_features, jexl_src, scope)
+    }
+
+    fn parse_prepared(
+        &mut self,
+        jexl_info: Option<JexlInfo>,
+        jexl_features: &JexlFeatures,
+        jexl_src: &str,
+        scope: Option<ScopeId>,
+    ) -> Result<Parsed, JexlException> {
         let previous = self.get_features().clone();
         self.set_features(jexl_features.clone());
         // If registers are allowed, the default parser state has to be REGISTERS.

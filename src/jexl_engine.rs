@@ -156,6 +156,82 @@ impl JexlEngine {
         Ok(parsed)
     }
 
+    /// port of: Engine.options(null, JexlContext) — the options with no script to take pragmas
+    /// from (what `TemplateEngine.TemplateExpression.options` uses).
+    pub(crate) fn options_no_script(&self, context: &dyn JexlContext) -> JexlOptions {
+        let mut opts = self.options_for(context);
+        if self.script_features.is_lexical() {
+            opts.set_lexical(true);
+        }
+        if self.script_features.is_lexical_shade() {
+            opts.set_lexical_shade(true);
+        }
+        opts
+    }
+
+    /// port of: Engine.parse(JexlInfo, boolean, String, Scope) — the entry `TemplateEngine` uses.
+    /// `expr` picks the expression (no-script) features; `scope` is the arena and frame of the
+    /// template script the sub-expression belongs to.
+    pub(crate) fn parse_jxlt(
+        self: &Arc<Self>,
+        info: Option<JexlInfo>,
+        expr: bool,
+        src: &str,
+        scope: Option<(&crate::internal::scope::Scopes, crate::internal::scope::ScopeId)>,
+    ) -> Result<Arc<Parsed>, JexlException> {
+        let features = if expr { self.expression_features.clone() } else { self.script_features.clone() };
+        let cached = self.cache_size > 0 && (src.encode_utf16().count() as i32) < self.cache_threshold;
+        if cached {
+            if let Some(hit) = self.cache.lock().unwrap_or_else(|p| p.into_inner()).get(&features, src) {
+                // Java only reuses a cached tree whose Scope equals the one asked for
+                let f = hit.node().get_scope();
+                let matches = match (f, scope) {
+                    (None, None) => true,
+                    (Some(f), Some((scopes, id))) => *f == *scopes.get(id),
+                    _ => false,
+                };
+                if matches {
+                    return Ok(hit);
+                }
+            }
+        }
+        let mut parser = self.parser.lock().unwrap_or_else(|p| p.into_inner());
+        let parsed = match scope {
+            Some((scopes, id)) => Arc::new(parser.parse_in_scope(info, &features, src, scopes, Some(id))?),
+            None => Arc::new(parser.parse(info, &features, src, None)?),
+        };
+        drop(parser);
+        if cached {
+            self.cache
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .put(features, src.to_string(), parsed.clone());
+        }
+        Ok(parsed)
+    }
+
+    /// port of: JexlEngine.createJxltEngine()
+    pub fn create_jxlt_engine(self: &Arc<Self>) -> Arc<crate::internal::template_engine::TemplateEngine> {
+        crate::jxlt_engine::create_jxlt_engine(self)
+    }
+
+    /// port of: JexlEngine.createJxltEngine(boolean, int, char, char)
+    pub fn create_jxlt_engine_with(
+        self: &Arc<Self>,
+        noscript: bool,
+        cache_size: i32,
+        immediate: char,
+        deferred: char,
+    ) -> Arc<crate::internal::template_engine::TemplateEngine> {
+        crate::jxlt_engine::create_jxlt_engine_with(self, noscript, cache_size, immediate, deferred)
+    }
+
+    /// port of: Engine.jxlt() — the lazily built default template engine. Its cache size is 0,
+    /// so (unlike Java) there is nothing to keep between calls and a fresh one is built each time.
+    pub(crate) fn jxlt(self: &Arc<Self>) -> Arc<crate::internal::template_engine::TemplateEngine> {
+        crate::jxlt_engine::create_jxlt_engine_with(self, true, 0, '$', '#')
+    }
+
     /// port of: JexlEngine.clearCache
     pub fn clear_cache(&self) {
         self.cache.lock().unwrap_or_else(|p| p.into_inner()).clear();
@@ -179,7 +255,7 @@ impl JexlEngine {
     }
 
     // port of: Engine.options(JexlContext)
-    fn options_for(&self, context: &dyn JexlContext) -> JexlOptions {
+    pub(crate) fn options_for(&self, context: &dyn JexlContext) -> JexlOptions {
         match context.get_engine_options() {
             Some(o) => o,
             None => self.options.clone(),
@@ -187,7 +263,7 @@ impl JexlEngine {
     }
 
     // port of: Engine.options(ASTJexlScript, JexlContext) and Engine.processPragmas
-    fn options_for_script(&self, parsed: &Parsed, context: &dyn JexlContext) -> JexlOptions {
+    pub(crate) fn options_for_script(&self, parsed: &Parsed, context: &dyn JexlContext) -> JexlOptions {
         let mut opts = self.options_for(context);
         if self.script_features.is_lexical() {
             opts.set_lexical(true);
@@ -225,7 +301,7 @@ impl JexlEngine {
         opts
     }
 
-    fn engine_ref(&self, options: &JexlOptions) -> Arc<EngineRef> {
+    pub(crate) fn engine_ref(&self, options: &JexlOptions) -> Arc<EngineRef> {
         Arc::new(EngineRef {
             uberspect: self.uberspect.clone(),
             arithmetic: self.arithmetic.clone(),

@@ -86,6 +86,10 @@ pub struct Interpreter {
     pub(crate) block: Option<LexicalFrame>,
     /// the interpreter nesting depth (Interpreter.fp)
     pub(crate) fp: i32,
+    /// port of: TemplateInterpreter — Java subclasses Interpreter to add `jexl:print`,
+    /// `jexl:include` and `$jexl`; this port carries the subclass state instead.
+    /// See `crate::internal::template_interpreter`.
+    pub(crate) tmpl: Option<Arc<crate::internal::template_interpreter::TemplateState>>,
 }
 
 type R = Result<Value, JexlException>;
@@ -123,6 +127,7 @@ impl Interpreter {
             frame,
             block: None,
             fp: 0,
+            tmpl: None,
         }
     }
 
@@ -625,6 +630,9 @@ impl Interpreter {
             JJTREFERENCEEXPRESSION => self.accept(node.child(0), data),
             JJTIDENTIFIER | JJTNAMESPACEIDENTIFIER => {
                 self.cancel_check(node)?;
+                if let Some(w) = crate::internal::template_interpreter::visit_identifier(self, node) {
+                    return Ok(w);
+                }
                 match data {
                     Some(d) => {
                         let name = Value::string(node.identifier().expect("identifier").get_name());
@@ -1169,9 +1177,7 @@ impl Interpreter {
 
     // port of: Interpreter.visit(ASTJxltLiteral)
     fn visit_jxlt_literal(&mut self, node: NodeRef<'_>) -> R {
-        // ponytail: the JXLT engine lands separately; until it does this fails loudly rather than
-        // pretending the literal is its own text (which silently changes control flow).
-        Err(JexlException::new(Some(self.handle(node)), "JXLT not ported", None))
+        crate::internal::template_interpreter::visit_jxlt_literal(self, node)
     }
 
     // port of: Interpreter.evalIdentifier
@@ -1179,8 +1185,7 @@ impl Interpreter {
         if !node.is_expression() {
             return Ok(node.identifier_access().expect("access").get_identifier());
         }
-        // ponytail: JXLT-backed identifiers need the template engine; not ported yet.
-        Err(JexlException::new(Some(self.handle(node)), "JXLT not ported", None))
+        crate::internal::template_interpreter::eval_identifier_jxlt(self, node)
     }
 
     // port of: Interpreter.visit(ASTArrayAccess)
@@ -1245,6 +1250,7 @@ impl Interpreter {
             frame,
             block: None,
             fp: self.fp + 1,
+            tmpl: self.tmpl.clone(),
         }
     }
 
@@ -1598,6 +1604,9 @@ impl Interpreter {
 
     // port of: Interpreter.visit(ASTFunctionNode)
     fn visit_function(&mut self, node: NodeRef<'_>, _data: Option<&Value>) -> R {
+        if let Some(r) = crate::internal::template_interpreter::visit_function(self, node) {
+            return r;
+        }
         let function_node = node.child(0);
         let nsid = function_node.identifier().and_then(|i| i.get_namespace().map(str::to_string));
         let namespace = match &nsid {
