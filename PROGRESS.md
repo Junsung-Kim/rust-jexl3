@@ -22,7 +22,7 @@ Method: TDD. Each subsystem: oracle-derived cases / ported upstream tests commit
 | java.util.HashMap / HashSet order | GREEN | `cargo test --test java_hash_map` (6 tests, 20,700 JVM sequences) |
 | parser (Parser.jjt productions, JexlParser, FeatureController, getVariables) | GREEN | `cargo test --test parser_oracle` 8,000 cases, 0 mismatches |
 | Debugger (getParsedText, exception snippets) | GREEN | `cargo test --test debugger_oracle` 17,500 CI cases (8,000 parsed + 8,000 round-trip + 1,500 API over 19,927 nodes); local campaign 112,000+; llvm-cov 97.4% |
-| Interpreter, Operators, Engine, contexts, public API | 5,959 cases, **2 differ**, both listed in `known_mismatches.txt` (41 skipped: 38 JVM timeout/OOM, 3 not comparable) | `cargo test --test exec_oracle` |
+| Interpreter, Operators, Engine, contexts, public API | 5,959 cases, **1 differs**, listed in `known_mismatches.txt` (41 skipped: 38 JVM timeout/OOM, 3 not comparable) | `cargo test --test exec_oracle` |
 | java.util.regex | GREEN for the suites that use it | `cargo test --test java_regex` |
 | JDK shim (introspection) + JexlSandbox | GREEN | `cargo test --test spi_oracle` |
 | JXLT template engine (JxltEngine, TemplateEngine, TemplateInterpreter, TemplateDebugger) | GREEN | `cargo test --test jxlt_oracle`: 8,364 protocol cases + 1,917 API cases, 0 mismatches |

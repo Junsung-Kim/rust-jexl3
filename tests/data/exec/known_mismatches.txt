@@ -4,4 +4,3 @@
 #
 # id         MISMATCHES.md entry
 f31_844      java.beans introspection blames the next segment and adds an IntrospectionException cause
-f31_2320     the JDK names a varargs parameter <parameter1> from the bytecode's local-variable table

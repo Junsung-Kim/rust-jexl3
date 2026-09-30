@@ -255,7 +255,9 @@ impl HostIntrospector for TestHosts {
                         if a.len() == 1 && a[0].is_null() {
                             return Err(JexlException::java(
                                 "java.lang.NullPointerException",
-                                Some("Cannot read the array length because \"args\" is null".into()),
+                                // Hosts.java is compiled without -g (oracle/build.sh), so the
+                                // helpful NPE has no parameter names and says <parameter1>
+                                Some("Cannot read the array length because \"<parameter1>\" is null".into()),
                             ));
                         }
                         let parts: Vec<String> = a.iter().map(|v| v.java_to_string()).collect();

@@ -10,12 +10,11 @@ and `cargo test` fails on any difference not listed there -- and on a listed one
 to match, so a fix must remove its line. `tests/data/exec/not_comparable.txt` lists the cases
 whose Java answer is not reproducible at all (below).
 
-## Execution suite — 2 of 5,959 (`tests/data/exec`)
+## Execution suite — 1 of 5,959 (`tests/data/exec`)
 
 | id | expression | Java | this port | why |
 |---|---|---|---|---|
 | `f31_844` | `c.name.new && t` | `undefined property 'new'`, caused by `java.beans.IntrospectionException: property get error: class java.lang.Character@new` | `undefined property 'name'` | Java's bean introspector reports the failure one segment further along, and attaches a `java.beans` cause. The port has no `java.beans`, so the first unresolvable segment is the one blamed. |
-| `f31_2320` | `ns:joinWithPipe(z)` with `z` null | NPE `Cannot read the array length because "<parameter1>" is null` | ...because `"args"` is null | The JDK's helpful NullPointerException names a parameter from the *bytecode's* local-variable table when it has one and `<parameterN>` when it does not. The name depends on how the class was compiled, not on JEXL. |
 
 ## Script-API suite — 0 of 2,976 (`tests/data/exec/api_*`)
 
