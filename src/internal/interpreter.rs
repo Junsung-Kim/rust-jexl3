@@ -1952,7 +1952,8 @@ impl Interpreter {
             }
             break;
         }
-        let tstr = target.java_to_string();
+        // port of: `final String tstr = target != null ? target.toString() : "?";`
+        let tstr = if target.is_null() { "?".to_string() } else { target.java_to_string() };
         self.unsolvable_method(node, &tstr, Some(&argv))
     }
 

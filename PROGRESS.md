@@ -22,11 +22,11 @@ Method: TDD. Each subsystem: oracle-derived cases / ported upstream tests commit
 | java.util.HashMap / HashSet order | GREEN | `cargo test --test java_hash_map` (6 tests, 20,700 JVM sequences) |
 | parser (Parser.jjt productions, JexlParser, FeatureController, getVariables) | GREEN | `cargo test --test parser_oracle` 8,000 cases, 0 mismatches |
 | Debugger (getParsedText, exception snippets) | GREEN | `cargo test --test debugger_oracle` 17,500 CI cases (8,000 parsed + 8,000 round-trip + 1,500 API over 19,927 nodes); local campaign 112,000+; llvm-cov 97.4% |
-| Interpreter, Operators, Engine, contexts, public API | 5,962 cases, **5 differ** (38 skipped: JVM timeout/OOM) | `cargo test --test exec_oracle` |
+| Interpreter, Operators, Engine, contexts, public API | 5,962 cases, **4 differ** (38 skipped: JVM timeout/OOM) | `cargo test --test exec_oracle` |
 | java.util.regex | GREEN for the suites that use it | `cargo test --test java_regex` |
 | JDK shim (introspection) + JexlSandbox | GREEN | `cargo test --test spi_oracle` |
 | JXLT template engine (JxltEngine, TemplateEngine, TemplateInterpreter, TemplateDebugger) | GREEN | `cargo test --test jxlt_oracle`: 8,364 protocol cases + 1,917 API cases, 0 mismatches |
-| JexlScript API (getParsedText, toString, getUnboundParameters, curry, callable) | 2,977 cases, **3 differ** | `cargo test --test exec_oracle script_api` |
+| JexlScript API (getParsedText, toString, getUnboundParameters, curry, callable) | 2,977 cases, **3 differ** (2 are identity-hash ordering) | `cargo test --test exec_oracle script_api` |
 | upstream test suite | **352 of 678 `@Test` ported, 0 failing** | `cargo test --test upstream_arithmetic --test upstream_literals --test upstream_statements --test upstream_lexical --test upstream_engine` |
 | consumer-profile suite | 4,000 cases, **1 differs** | `tools/gen_profile_cases.py`, replayed through `exec_oracle` |
 | private corpus (15,453 production expressions, never committed) | **GREEN** — 15,453 cases, 0 mismatches, 0 JVM restarts | `tools/gen_private_cases.py`, replayed through `exec_oracle` |
@@ -120,6 +120,28 @@ Scope and neither engine can reuse a cached parse -- that is the jar's real pars
 JEXL's parser backtracks exponentially on deeply nested unterminated literals. Measured on the jar:
 `"8%" + "{" * n` takes 66 ms at n=8, 429 ms at n=10, 6.8 s at n=12, 27 s at n=13. The port is
 within 2x of that. It is the original's behaviour, reproduced; bound the size of untrusted input.
+
+## Resume here
+
+Run `sh tools/verify.sh` (or `--full`) first: build, clippy, package, every suite, the upstream
+count and the privacy check, in about twenty lines.
+
+The single most valuable thing left is **the defect density on shapes no committed fixture covers**.
+A fresh 50,000-case chunk (`python3 tools/fuzz_gen.py 50000 <seed> --ops exec`, replayed through
+`tools/run_oracle.py`) reported 104 mismatches before the fixes of 2026-09-30 and 61 after. The
+committed fixtures are at 4 + 3. So the real rate is around 0.1%, not 0.05%, and the way to drive
+it down is: take a fresh seed, group the failures by signature (`EXEC_DUMP=/path cargo test
+--release --test exec_oracle execution_matches` writes one JSON object per mismatch), fix the
+largest class, repeat. Every fix so far came out of exactly that loop.
+
+Two shortcuts that paid off and are worth reusing:
+  * `tools/gen_upstream_corpus.py` lifts every JEXL source out of the Apache test suite (2,442 of
+    them) and compares them directly — far cheaper per defect found than porting @Test methods by
+    hand, and it found four real ones in an afternoon.
+  * When a message differs, read the Java that builds it. Three separate mismatches were the same
+    root cause: Java turns a null into `""` (`JexlException(node, msg, cause)` does
+    `msg != null ? msg : ""`), `"?"` (the constructor's `target != null ? target.toString() : "?"`)
+    or a node rendering, where the port reached for `to_string()` on a null value.
 
 ## Open work
 - Upstream test suite: 352 of 678 `@Test` ported. Remaining files are the issue-regression suites
