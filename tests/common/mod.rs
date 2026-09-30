@@ -49,7 +49,17 @@ pub fn normalize(v: &Json) -> Json {
         }
         Json::Arr(a) => Json::Arr(a.iter().map(normalize).collect()),
         Json::Obj(kv) => {
-            let out: Vec<(String, Json)> = kv.iter().map(|(k, x)| (k.clone(), normalize(x))).collect();
+            // The bits of a NaN an operation produces are the hardware's choice, not the language's:
+            // x86-64's default NaN has its sign bit set, aarch64's does not, for the JVM as for Rust.
+            // A script cannot see the difference (toString, equals and hashCode all ignore it), so a
+            // NaN is compared as a NaN; every other double keeps its bits (-0.0 is not 0.0).
+            let is_nan = matches!(v.get("t").and_then(Json::string).as_deref(), Some("Double") | Some("Float"))
+                && v.get("v").and_then(Json::string).as_deref() == Some("NaN");
+            let out: Vec<(String, Json)> = kv
+                .iter()
+                .filter(|(k, _)| !(is_nan && k == "bits"))
+                .map(|(k, x)| (k.clone(), normalize(x)))
+                .collect();
             let obj = Json::Obj(out);
             if unordered(&obj) {
                 return sort_elements(&obj);
