@@ -14,7 +14,7 @@ whose Java answer is not reproducible at all (below).
 
 | id | expression | Java | this port | why |
 |---|---|---|---|---|
-| `f31_844` | `c.name.new && t` | `undefined property 'new'`, caused by `java.beans.IntrospectionException: property get error: class java.lang.Character@new` | `undefined property 'name'` | Java's bean introspector reports the failure one segment further along, and attaches a `java.beans` cause. The port has no `java.beans`, so the first unresolvable segment is the one blamed. |
+| `f31_844` | `c.name.new && t` with `c` a Character | `undefined property 'new'`, caused by `java.beans.IntrospectionException: property get error: class java.lang.Character@new` | `undefined property 'name'` | JEXL's IndexedType resolver treats a class with a one-argument `getX(...)` as having an indexed property `x`. `java.lang.Character` has `getName(int)`, so on the JVM `c.name` is an `IndexedType$IndexedContainer` and the failure comes one segment later, from inside the container. The shim does not model indexed-property containers over JDK classes: whether one exists depends on the JDK class's method inventory, not on JEXL. The fresh differential samples hit the same thing twice (`a['name'] != 65535`, `obj.name.name.value`). |
 
 ## Script-API suite — 0 of 2,976 (`tests/data/exec/api_*`)
 
