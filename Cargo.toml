@@ -26,7 +26,7 @@ num-bigint = "0.4"
 num-traits = "0.2"
 num-integer = "0.1"
 log = "0.4"
-fancy-regex = "0.14"
+fancy-regex = "0.19"
 
 [workspace]
 members = [".", "harness"]
