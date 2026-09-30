@@ -814,6 +814,9 @@ impl JexlArithmetic {
             Value::String(_) => Some("java.lang.String"),
             Value::BigInteger(_) => Some("java.math.BigInteger"),
             Value::BigDecimal(_) => Some("java.math.BigDecimal"),
+            // Comparable<StringBuilder> since Java 11: compareTo casts its argument, so comparing a
+            // StringBuilder with anything else is a ClassCastException out of the JDK
+            Value::Object(o) if o.class_name() == "java.lang.StringBuilder" => Some("java.lang.StringBuilder"),
             _ => None,
         }
     }
@@ -829,6 +832,12 @@ impl JexlArithmetic {
                 -1
             }),
             (Value::Character(a), Value::Character(b)) => Some(*a as i32 - *b as i32),
+            // AbstractStringBuilder.compareTo: the contents, compared as String.compareTo does
+            (Value::Object(a), Value::Object(b))
+                if a.class_name() == "java.lang.StringBuilder" && b.class_name() == "java.lang.StringBuilder" =>
+            {
+                Some(left.java_to_jstring().compare_to(&right.java_to_jstring()))
+            }
             _ => None,
         }
     }
