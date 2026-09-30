@@ -360,7 +360,9 @@ impl HostIntrospector for TestHosts {
     fn get_property_set(&self, obj: &Value, identifier: &Value, arg: &Value) -> Option<Arc<dyn JexlPropertySet>> {
         let bean = obj.as_host::<Bean>()?;
         let property = identifier.java_to_string();
-        bean.set(&property, arg)?;
+        // only report a setter the bean actually has; the Err arm is the argument being wrong,
+        // which is still a resolvable setter
+        let _ = bean.set(&property, arg)?;
         Some(Arc::new(BeanSet { property }))
     }
 
