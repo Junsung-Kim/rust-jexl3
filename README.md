@@ -1,5 +1,7 @@
 # rust-jexl3
 
+[![crates.io](https://img.shields.io/crates/v/rust-jexl3.svg)](https://crates.io/crates/rust-jexl3)
+[![docs.rs](https://img.shields.io/docsrs/rust-jexl3)](https://docs.rs/rust-jexl3)
 [![ci](https://github.com/Junsung-Kim/rust-jexl3/actions/workflows/ci.yml/badge.svg)](https://github.com/Junsung-Kim/rust-jexl3/actions/workflows/ci.yml)
 [![MSRV 1.80](https://img.shields.io/badge/MSRV-1.80-blue)](Cargo.toml)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
