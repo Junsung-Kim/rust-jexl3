@@ -81,6 +81,11 @@ been tuned yet. The numbers are in [PROGRESS.md](PROGRESS.md).
 JEXL's parser backtracks exponentially on deeply nested unterminated literals, in Java as well as
 here; bound the size of untrusted input.
 
+## Publishing
+
+Not published yet. [PUBLISHING.md](PUBLISHING.md) is the runbook: the repository URL, the GitHub
+remote and the crates.io release, each as the command that does it.
+
 ## License
 
 Apache-2.0, like the original. This is a derivative work of Apache Commons JEXL; see
