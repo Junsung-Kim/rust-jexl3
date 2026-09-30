@@ -126,6 +126,8 @@ pub struct JHashMap<K, V> {
     table: Vec<usize>,
     /// Java `threshold`; before allocation it holds the initial capacity (0 = default).
     threshold: i32,
+    /// `loadFactor`: when the table doubles, and so the iteration order once it has
+    load_factor: f32,
     linked: bool,
     head: usize,
     tail: usize,
@@ -139,7 +141,23 @@ impl<K: JavaHash + Clone, V: Clone> Default for JHashMap<K, V> {
 
 impl<K: JavaHash + Clone, V: Clone> JHashMap<K, V> {
     fn empty(threshold: usize, linked: bool) -> Self {
-        JHashMap { nodes: Vec::new(), table: Vec::new(), threshold: threshold as i32, linked, head: NIL, tail: NIL }
+        JHashMap {
+            nodes: Vec::new(),
+            table: Vec::new(),
+            threshold: threshold as i32,
+            load_factor: LOAD_FACTOR,
+            linked,
+            head: NIL,
+            tail: NIL,
+        }
+    }
+
+    /// `new HashMap<>(initialCapacity, loadFactor)` / `new LinkedHashMap<>(...)`; the caller has
+    /// already rejected what the Java constructor rejects.
+    pub fn with_capacity_and_load_factor(initial: usize, load_factor: f32, linked: bool) -> Self {
+        let mut m = Self::empty(table_size_for(initial), linked);
+        m.load_factor = load_factor;
+        m
     }
 
     /// `new HashMap<>()`
@@ -546,7 +564,7 @@ impl<K: JavaHash + Clone, V: Clone> JHashMap<K, V> {
             new_thr = (LOAD_FACTOR * DEFAULT_INITIAL_CAPACITY as f32) as i32;
         }
         if new_thr == 0 {
-            let ft = new_cap as f32 * LOAD_FACTOR;
+            let ft = new_cap as f32 * self.load_factor;
             new_thr = if new_cap < MAXIMUM_CAPACITY && ft < MAXIMUM_CAPACITY as f32 { ft as i32 } else { i32::MAX };
         }
         self.threshold = new_thr;
@@ -1235,6 +1253,9 @@ impl<K: JavaHash + Clone> JHashSet<K> {
     /// `new LinkedHashSet<>(initialCapacity)`
     pub fn linked_with_capacity(initial: usize) -> Self {
         JHashSet { map: JHashMap::linked_with_capacity(initial) }
+    }
+    pub fn with_capacity_and_load_factor(initial: usize, load_factor: f32, linked: bool) -> Self {
+        JHashSet { map: JHashMap::with_capacity_and_load_factor(initial, load_factor, linked) }
     }
     /// Empty set sized like `new HashSet<>(c)` for a collection of `len` elements; add them next.
     pub fn from_collection(len: usize) -> Self {

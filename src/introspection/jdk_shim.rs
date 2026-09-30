@@ -535,6 +535,45 @@ fn arg_i64(v: &Value) -> i64 {
     }
 }
 
+/// A Java throwable escaping a JDK call.
+fn java_error(class: &str, message: String) -> Result<Value, JexlException> {
+    Err(JexlException::java(class, Some(message)))
+}
+
+/// Allocating an array longer than the VM allows fails before the heap is even consulted:
+/// `OutOfMemoryError: Requested array size exceeds VM limit`. HotSpot's limit is
+/// `Integer.MAX_VALUE - 2` (measured on Corretto 25: 2147483645 allocates, 2147483646 does not).
+/// Below it an allocation can still fail for want of heap, but that depends on -Xmx, not on JEXL.
+fn vm_array(length: i32) -> Result<(), JexlException> {
+    if length > i32::MAX - 2 {
+        return Err(JexlException::java(
+            "java.lang.OutOfMemoryError",
+            Some("Requested array size exceeds VM limit".into()),
+        ));
+    }
+    Ok(())
+}
+
+/// `HashMap(int initialCapacity, float loadFactor)`'s own checks. The capacity decides the table
+/// size and the load factor when it doubles -- both show in the iteration order.
+fn capacity_and_load(capacity: &Value, load: Option<&Value>) -> Result<(usize, f32), JexlException> {
+    let n = arg_i32(capacity);
+    if n < 0 {
+        return Err(JexlException::java(
+            "java.lang.IllegalArgumentException",
+            Some(format!("Illegal initial capacity: {}", n)),
+        ));
+    }
+    let f = load.map(arg_f32).unwrap_or(0.75);
+    if f <= 0.0 || f.is_nan() {
+        return Err(JexlException::java(
+            "java.lang.IllegalArgumentException",
+            Some(format!("Illegal load factor: {}", crate::java::number::float_to_string(f))),
+        ));
+    }
+    Ok((n as usize, f))
+}
+
 fn arg_i32(v: &Value) -> i32 {
     match v {
         Value::Float(f) => d2i(*f as f64),
@@ -3574,7 +3613,15 @@ const ARRAY_INHERITED_COLLECTION: &[Sig] = sigs!("java.util.Collection";
 
 const CTORS: &[Sig] = sigs!("";
     "java.util.ArrayList"() -> "java.util.ArrayList" = |_, _| Ok(Value::List(JList::array_list(Vec::new())));
-    "java.util.ArrayList"("int") -> "java.util.ArrayList" = |_, _| Ok(Value::List(JList::array_list(Vec::new())));
+    "java.util.ArrayList"("int") -> "java.util.ArrayList" = |_, a| {
+        // `new Object[initialCapacity]`, allocated there and then
+        let n = arg_i32(&a[0]);
+        if n < 0 {
+            return java_error("java.lang.IllegalArgumentException", format!("Illegal Capacity: {}", n));
+        }
+        vm_array(n)?;
+        Ok(Value::List(JList::array_list(Vec::new())))
+    };
     "java.util.ArrayList"("java.util.Collection") -> "java.util.ArrayList" = |_, a| {
         if a[0].is_null() {
             return npe("Cannot invoke \"java.util.Collection.toArray()\" because \"c\" is null");
@@ -3590,33 +3637,51 @@ const CTORS: &[Sig] = sigs!("";
         Ok(Value::List(JList::new(ListKind::LinkedList, arg_values(&a[0]))))
     };
     "java.util.HashMap"() -> "java.util.HashMap" = |_, _| Ok(Value::Map(JMap::hash_map()));
-    "java.util.HashMap"("int") -> "java.util.HashMap" = |_, _| Ok(Value::Map(JMap::hash_map()));
-    "java.util.HashMap"("int", "float") -> "java.util.HashMap" = |_, _| Ok(Value::Map(JMap::hash_map()));
+    "java.util.HashMap"("int") -> "java.util.HashMap" =
+        |_, a| Ok(Value::Map(JMap::new(MapKind::HashMap, { let (c, f) = capacity_and_load(&a[0], None)?; JHashMap::with_capacity_and_load_factor(c, f, false) })));
+    "java.util.HashMap"("int", "float") -> "java.util.HashMap" =
+        |_, a| Ok(Value::Map(JMap::new(MapKind::HashMap, { let (c, f) = capacity_and_load(&a[0], Some(&a[1]))?; JHashMap::with_capacity_and_load_factor(c, f, false) })));
     "java.util.HashMap"("java.util.Map") -> "java.util.HashMap" = |_, a| copy_map(&a[0], MapKind::HashMap);
     "java.util.LinkedHashMap"() -> "java.util.LinkedHashMap" =
         |_, _| Ok(Value::Map(JMap::new(MapKind::LinkedHashMap, JHashMap::new_linked())));
     "java.util.LinkedHashMap"("int") -> "java.util.LinkedHashMap" =
-        |_, _| Ok(Value::Map(JMap::new(MapKind::LinkedHashMap, JHashMap::new_linked())));
+        |_, a| Ok(Value::Map(JMap::new(MapKind::LinkedHashMap, { let (c, f) = capacity_and_load(&a[0], None)?; JHashMap::with_capacity_and_load_factor(c, f, true) })));
     "java.util.LinkedHashMap"("int", "float") -> "java.util.LinkedHashMap" =
-        |_, _| Ok(Value::Map(JMap::new(MapKind::LinkedHashMap, JHashMap::new_linked())));
+        |_, a| Ok(Value::Map(JMap::new(MapKind::LinkedHashMap, { let (c, f) = capacity_and_load(&a[0], Some(&a[1]))?; JHashMap::with_capacity_and_load_factor(c, f, true) })));
     "java.util.LinkedHashMap"("java.util.Map") -> "java.util.LinkedHashMap" =
         |_, a| copy_map(&a[0], MapKind::LinkedHashMap);
     "java.util.HashSet"() -> "java.util.HashSet" = |_, _| Ok(Value::Set(JSet::new(SetKind::HashSet, JHashSet::new())));
-    "java.util.HashSet"("int") -> "java.util.HashSet" =
-        |_, _| Ok(Value::Set(JSet::new(SetKind::HashSet, JHashSet::new())));
-    "java.util.HashSet"("int", "float") -> "java.util.HashSet" =
-        |_, _| Ok(Value::Set(JSet::new(SetKind::HashSet, JHashSet::new())));
+    "java.util.HashSet"("int") -> "java.util.HashSet" = |_, a| {
+        let (c, f) = capacity_and_load(&a[0], None)?;
+        Ok(Value::Set(JSet::new(SetKind::HashSet, JHashSet::with_capacity_and_load_factor(c, f, false))))
+    };
+    "java.util.HashSet"("int", "float") -> "java.util.HashSet" = |_, a| {
+        let (c, f) = capacity_and_load(&a[0], Some(&a[1]))?;
+        Ok(Value::Set(JSet::new(SetKind::HashSet, JHashSet::with_capacity_and_load_factor(c, f, false))))
+    };
     "java.util.HashSet"("java.util.Collection") -> "java.util.HashSet" = |_, a| copy_set(&a[0], SetKind::HashSet);
     "java.util.LinkedHashSet"() -> "java.util.LinkedHashSet" =
         |_, _| Ok(Value::Set(JSet::new(SetKind::LinkedHashSet, JHashSet::new_linked())));
-    "java.util.LinkedHashSet"("int") -> "java.util.LinkedHashSet" =
-        |_, _| Ok(Value::Set(JSet::new(SetKind::LinkedHashSet, JHashSet::new_linked())));
-    "java.util.LinkedHashSet"("int", "float") -> "java.util.LinkedHashSet" =
-        |_, _| Ok(Value::Set(JSet::new(SetKind::LinkedHashSet, JHashSet::new_linked())));
+    "java.util.LinkedHashSet"("int") -> "java.util.LinkedHashSet" = |_, a| {
+        let (c, f) = capacity_and_load(&a[0], None)?;
+        Ok(Value::Set(JSet::new(SetKind::LinkedHashSet, JHashSet::with_capacity_and_load_factor(c, f, true))))
+    };
+    "java.util.LinkedHashSet"("int", "float") -> "java.util.LinkedHashSet" = |_, a| {
+        let (c, f) = capacity_and_load(&a[0], Some(&a[1]))?;
+        Ok(Value::Set(JSet::new(SetKind::LinkedHashSet, JHashSet::with_capacity_and_load_factor(c, f, true))))
+    };
     "java.util.LinkedHashSet"("java.util.Collection") -> "java.util.LinkedHashSet" =
         |_, a| copy_set(&a[0], SetKind::LinkedHashSet);
     "java.lang.StringBuilder"() -> "java.lang.StringBuilder" = |_, _| Ok(JavaStringBuilder::new(Vec::new()));
-    "java.lang.StringBuilder"("int") -> "java.lang.StringBuilder" = |_, _| Ok(JavaStringBuilder::new(Vec::new()));
+    "java.lang.StringBuilder"("int") -> "java.lang.StringBuilder" = |_, a| {
+        // `value = new byte[capacity]`
+        let n = arg_i32(&a[0]);
+        if n < 0 {
+            return java_error("java.lang.NegativeArraySizeException", n.to_string());
+        }
+        vm_array(n)?;
+        Ok(JavaStringBuilder::new(Vec::new()))
+    };
     "java.lang.StringBuilder"("java.lang.String") -> "java.lang.StringBuilder" = |_, a| {
         if a[0].is_null() {
             return npe("Cannot invoke \"String.length()\" because \"str\" is null");

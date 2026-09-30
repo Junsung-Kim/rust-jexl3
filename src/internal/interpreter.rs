@@ -1853,14 +1853,23 @@ impl Interpreter {
         }
         let _ = isavar;
         let mut narrow = false;
-        loop {
+        // Java wraps the whole dispatch in `catch (JexlException.Method xmethod) { }`: a method
+        // missing *inside* what this call invoked (a lambda's body, say) is not this call's
+        // answer -- control falls through to the call site's own unsolvableMethod below.
+        'dispatch: loop {
             // the target's own method
             if functor_value.is_none() {
                 if let Some(name) = &method_name {
                     let recv = if is_context_target { Value::Null } else { target.clone() };
                     if !is_context_target {
                         if let Some(vm) = self.uberspect.get_method(&recv, name, &argv) {
-                            return self.invoked(node, name, vm.invoke(&recv, &argv));
+                            match self.invoked(node, name, vm.invoke(&recv, &argv)) {
+
+                                Err(e) if e.is_method_error() => break 'dispatch,
+
+                                r => return r,
+
+                            }
                         }
                         // ...or an arithmetic function, with the target prepended: `x.empty()`
                         // reaches JexlArithmetic.empty(Object).
@@ -1870,7 +1879,13 @@ impl Interpreter {
                         pargv.push(target.clone());
                         pargv.extend(argv.iter().cloned());
                         if let Some(r) = self.arithmetic_method(name, &pargv) {
-                            return self.invoked(node, name, r);
+                            match self.invoked(node, name, r) {
+
+                                Err(e) if e.is_method_error() => break 'dispatch,
+
+                                r => return r,
+
+                            }
                         }
                         // ...or a functor stored in a property of the target: `m.a()` where the
                         // map holds a lambda under "a".
@@ -1891,12 +1906,24 @@ impl Interpreter {
                         let namespace = self.resolve_namespace(None, node)?;
                         if !namespace.is_null() {
                             if let Some(vm) = self.uberspect.get_method(&namespace, name, &argv) {
-                                return self.invoked(node, name, vm.invoke(&namespace, &argv));
+                                match self.invoked(node, name, vm.invoke(&namespace, &argv)) {
+
+                                    Err(e) if e.is_method_error() => break 'dispatch,
+
+                                    r => return r,
+
+                                }
                             }
                         }
                         // ...then solve it as an arithmetic function
                         if let Some(r) = self.arithmetic_method(name, &argv) {
-                            return self.invoked(node, name, r);
+                            match self.invoked(node, name, r) {
+
+                                Err(e) if e.is_method_error() => break 'dispatch,
+
+                                r => return r,
+
+                            }
                         }
                     }
                 }
@@ -1904,15 +1931,33 @@ impl Interpreter {
             if let Some(f) = &functor_value {
                 if let Some(script) = f.as_host::<Closure>() {
                     let name = method_name.clone().unwrap_or_default();
-                    return self.invoked(node, &name, script.execute(self, &argv));
+                    match self.invoked(node, &name, script.execute(self, &argv)) {
+
+                        Err(e) if e.is_method_error() => break 'dispatch,
+
+                        r => return r,
+
+                    }
                 }
                 if let Some(name) = &method_name {
                     if let Some(vm) = self.uberspect.get_method(f, name, &argv) {
-                        return self.invoked(node, name, vm.invoke(f, &argv));
+                        match self.invoked(node, name, vm.invoke(f, &argv)) {
+
+                            Err(e) if e.is_method_error() => break 'dispatch,
+
+                            r => return r,
+
+                        }
                     }
                 }
                 if let Some(vm) = self.uberspect.get_method(f, "call", &argv) {
-                    return self.invoked(node, "call", vm.invoke(f, &argv));
+                    match self.invoked(node, "call", vm.invoke(f, &argv)) {
+
+                        Err(e) if e.is_method_error() => break 'dispatch,
+
+                        r => return r,
+
+                    }
                 }
             }
             if narrow || !self.arithmetic.narrow_arguments(&mut argv) {
@@ -1923,8 +1968,18 @@ impl Interpreter {
         if node.is_safe_lhs(self.is_safe()) {
             return Ok(Value::Null);
         }
-        let name = method_name.unwrap_or_else(|| "?".into());
-        self.unsolvable_method(node, &name, Some(&argv))
+        match method_name {
+            Some(name) => self.unsolvable_method(node, &name, Some(&argv)),
+            // `(lambda)(args)` has no name. JexlException.Method builds its message eagerly with
+            // methodSignature(name, args), whose `new StringBuilder(name)` throws on a null name as
+            // soon as there are arguments -- only when the engine is strict, the one path that
+            // builds the exception at all.
+            None if !argv.is_empty() && self.is_strict_engine() => Err(JexlException::java(
+                "java.lang.NullPointerException",
+                Some("Cannot invoke \"String.length()\" because \"str\" is null".into()),
+            )),
+            None => self.unsolvable_method(node, "", Some(&argv)),
+        }
     }
 
     // port of: Interpreter.visit(ASTConstructorNode)

@@ -344,6 +344,11 @@ impl JexlException {
         !matches!(self.0.kind, ExceptionKind::Java { .. })
     }
 
+    /// `instanceof JexlException.Method`: an unsolvable function or method.
+    pub fn is_method_error(&self) -> bool {
+        matches!(self.0.kind, ExceptionKind::Method)
+    }
+
     /// JexlException.Return / Break / Continue — the three that unwind without being errors.
     pub fn is_control_flow(&self) -> bool {
         matches!(self.0.kind, ExceptionKind::Return { .. } | ExceptionKind::Break | ExceptionKind::Continue)
