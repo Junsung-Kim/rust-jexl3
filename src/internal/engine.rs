@@ -26,19 +26,16 @@ pub(crate) fn is_space_char(c: u16) -> bool {
 }
 
 // port of: Engine.trimSource
+//
+// Java trims UTF-16 code units; a Rust &str holds no lone surrogates and every space char is in
+// the BMP, so trimming chars is the same thing without materialising the UTF-16.
 pub fn trim_source(str: &str) -> String {
-    let u: Vec<u16> = str.encode_utf16().collect();
-    let mut start = 0usize;
-    let mut end = u.len();
-    if end > 0 {
-        while start < end && is_space_char(u[start]) {
-            start += 1;
-        }
-        while end > start && is_space_char(u[end - 1]) {
-            end -= 1;
-        }
-    }
-    String::from_utf16_lossy(&u[start..end])
+    str.trim_matches(|c: char| {
+        let mut units = [0u16; 2];
+        let encoded = c.encode_utf16(&mut units);
+        encoded.len() == 1 && is_space_char(encoded[0])
+    })
+    .to_string()
 }
 
 /// port of: Engine.VarCollector

@@ -48,22 +48,40 @@ pub struct JexlEngine {
     cache: Mutex<SoftCache>,
 }
 
-/// port of: org.apache.commons.jexl3.internal.SoftCache — a bounded LRU.
+/// String.length() — the number of UTF-16 code units, without encoding the whole string.
+fn utf16_len(s: &str) -> usize {
+    if s.is_ascii() {
+        return s.len();
+    }
+    s.encode_utf16().count()
+}
+
+/// port of: org.apache.commons.jexl3.internal.SoftCache
+///
+/// Java's is a LinkedHashMap in access order that evicts its eldest entry past the capacity. This
+/// keeps the same semantics with the same complexity: a map from source text to the trees parsed
+/// from it (one per feature set, and one feature set is the usual case), plus the access order.
 struct SoftCache {
     capacity: usize,
-    entries: Vec<(JexlFeatures, String, Arc<Parsed>)>,
+    entries: HashMap<String, Vec<(JexlFeatures, Arc<Parsed>)>>,
+    /// least-recently-used first, one entry per (source, feature set) pair
+    order: std::collections::VecDeque<(String, usize)>,
 }
 
 impl SoftCache {
     fn new(capacity: usize) -> SoftCache {
-        SoftCache { capacity, entries: Vec::new() }
+        SoftCache { capacity, entries: HashMap::new(), order: std::collections::VecDeque::new() }
     }
 
     fn get(&mut self, features: &JexlFeatures, src: &str) -> Option<Arc<Parsed>> {
-        let pos = self.entries.iter().position(|(f, s, _)| f == features && s == src)?;
-        let entry = self.entries.remove(pos);
-        let parsed = entry.2.clone();
-        self.entries.push(entry);
+        let variants = self.entries.get(src)?;
+        let at = variants.iter().position(|(f, _)| f == features)?;
+        let parsed = variants[at].1.clone();
+        // LinkedHashMap(accessOrder = true): a read moves the entry to the end
+        if let Some(pos) = self.order.iter().position(|(s, i)| s == src && *i == at) {
+            let e = self.order.remove(pos).expect("found above");
+            self.order.push_back(e);
+        }
         Some(parsed)
     }
 
@@ -71,14 +89,36 @@ impl SoftCache {
         if self.capacity == 0 {
             return;
         }
-        if self.entries.len() >= self.capacity {
-            self.entries.remove(0);
+        if self.get(&features, &src).is_some() {
+            return;
         }
-        self.entries.push((features, src, parsed));
+        while self.order.len() >= self.capacity {
+            // removeEldestEntry
+            if let Some((s, i)) = self.order.pop_front() {
+                if let Some(v) = self.entries.get_mut(&s) {
+                    if i < v.len() {
+                        v.remove(i);
+                    }
+                    if v.is_empty() {
+                        self.entries.remove(&s);
+                    }
+                }
+                // the indexes behind the removed variant shifted down
+                for (os, oi) in self.order.iter_mut() {
+                    if *os == s && *oi > i {
+                        *oi -= 1;
+                    }
+                }
+            }
+        }
+        let variants = self.entries.entry(src.clone()).or_default();
+        variants.push((features, parsed));
+        self.order.push_back((src, variants.len() - 1));
     }
 
     fn clear(&mut self) {
         self.entries.clear();
+        self.order.clear();
     }
 }
 
@@ -144,7 +184,7 @@ impl JexlEngine {
         src: &str,
         names: Option<&[String]>,
     ) -> Result<Arc<Parsed>, JexlException> {
-        let cached = self.cache_size > 0 && (src.encode_utf16().count() as i32) < self.cache_threshold;
+        let cached = self.cache_size > 0 && (utf16_len(src) as i32) < self.cache_threshold;
         if cached && names.is_none() {
             if let Some(hit) = self.cache.lock().unwrap_or_else(|p| p.into_inner()).get(features, src) {
                 return Ok(hit);
@@ -196,7 +236,7 @@ impl JexlEngine {
         scope: Option<(&crate::internal::scope::Scopes, crate::internal::scope::ScopeId)>,
     ) -> Result<Arc<Parsed>, JexlException> {
         let features = if expr { self.expression_features.clone() } else { self.script_features.clone() };
-        let cached = self.cache_size > 0 && (src.encode_utf16().count() as i32) < self.cache_threshold;
+        let cached = self.cache_size > 0 && (utf16_len(src) as i32) < self.cache_threshold;
         if cached {
             if let Some(hit) = self.cache.lock().unwrap_or_else(|p| p.into_inner()).get(&features, src) {
                 // Java only reuses a cached tree whose Scope equals the one asked for
