@@ -5,20 +5,29 @@ Corretto 25, found by the differential suites. Each one is explained; none is un
 
 Re-measure with the commands in [PROGRESS.md](PROGRESS.md).
 
-The committed suites hold these as a baseline: `tests/data/exec/known_mismatches.txt` lists them,
-and `cargo test` fails on any difference not listed there -- and on a listed one that has started
-to match, so a fix must remove its line. `tests/data/exec/not_comparable.txt` lists the cases
+The committed suites hold understood differences as a baseline in
+`tests/data/exec/known_mismatches.txt`; `cargo test` fails on any difference not listed there, and
+on a listed one that has started to match, so a fix must remove its line. The list is empty now. `tests/data/exec/not_comparable.txt` lists the cases
 whose Java answer is not reproducible at all (below).
 
-## Execution suite — 1 of 5,959 (`tests/data/exec`)
+## Execution suite — 0 of 5,959 (`tests/data/exec`)
 
-| id | expression | Java | this port | why |
-|---|---|---|---|---|
-| `f31_844` | `c.name.new && t` with `c` a Character | `undefined property 'new'`, caused by `java.beans.IntrospectionException: property get error: class java.lang.Character@new` | `undefined property 'name'` | JEXL's IndexedType resolver treats a class with a one-argument `getX(...)` as having an indexed property `x`. `java.lang.Character` has `getName(int)`, so on the JVM `c.name` is an `IndexedType$IndexedContainer` and the failure comes one segment later, from inside the container. The shim does not model indexed-property containers over JDK classes: whether one exists depends on the JDK class's method inventory, not on JEXL. The fresh differential samples hit the same thing twice (`a['name'] != 65535`, `obj.name.name.value`). |
+None open. `known_mismatches.txt` is empty; the replay fails on any difference from the jar.
 
 ## Script-API suite — 0 of 2,976 (`tests/data/exec/api_*`)
 
 None open.
+
+## Known limits of the modelled JDK
+
+Outside the committed suites, fresh random samples still find the edges of what the JDK shim
+models. The ones known today:
+
+- **Unicode tables.** `Character.getName(int)`, `getType(int)` and `getDirectionality(int)` need
+  the JDK's Unicode data, which the port does not carry. The indexed property JEXL builds from them
+  (`c.name`, `c.type`) is created exactly as on the JVM; asking it for a value with an int key fails
+  here where Java answers.
+- Anything COMPATIBILITY.md lists as out of scope (`java.util.Date`, reflection, ...).
 
 ## A note on the oracle itself
 

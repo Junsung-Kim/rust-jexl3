@@ -3,4 +3,3 @@
 # starts matching -- so a fix has to remove its line, and the list cannot go stale.
 #
 # id         MISMATCHES.md entry
-f31_844      IndexedType over a JDK class: Character.getName(int) makes c.name an indexed container

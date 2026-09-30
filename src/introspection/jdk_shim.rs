@@ -811,6 +811,7 @@ fn tables_for(v: &Value) -> Vec<&'static [Sig]> {
                 Some(view) if view.kind() == ViewKind::Values => vec![MAPVIEW, COLLECTION, OBJECT],
                 Some(_) => vec![MAPVIEW, SET, COLLECTION, OBJECT],
                 None if o.as_any().is::<MapEntry>() => vec![MAPENTRY, OBJECT],
+                None if o.as_any().is::<IndexedContainer>() => vec![INDEXED_CONTAINER, OBJECT],
                 // java.util.Iterator for an iterator the shim handed out; any other host object
                 // has only Object's methods here (its own come from its HostIntrospector)
                 None if o.as_any().is::<JIterator>() => vec![ITERATOR, OBJECT],
@@ -1525,6 +1526,96 @@ impl JdkShim {
     }
 }
 
+/// The public `get*` methods JEXL's IndexedType can turn into an indexed property, per class:
+/// measured with JEXL's own Introspector (getMethodNames) on Corretto 25, keeping the names that have
+/// no no-argument getX()/isX() -- those let the PROPERTY resolver answer first. Maps are left out
+/// (the MAP resolver answers every property of a map before CONTAINER is asked), and so are
+/// java.lang.Class and AtomicBoolean, whose getters the shim does not model.
+fn indexed_getters(class: &str) -> &'static [&'static str] {
+    match class {
+        "java.lang.String" | "java.lang.StringBuilder" => &["getChars"],
+        "java.lang.Character" => &["getDirectionality", "getName", "getNumericValue", "getType"],
+        "java.lang.Boolean" => &["getBoolean"],
+        "java.lang.Integer" => &["getInteger"],
+        "java.lang.Long" => &["getLong"],
+        _ => &[],
+    }
+}
+
+/// port of: IndexedType.discover -- `name.substring(0, 1).toUpperCase() + name.substring(1)`
+fn discover_container(claz: &JClass, property: &str) -> Option<Arc<dyn JexlPropertyGet>> {
+    let mut chars = property.chars();
+    let first = chars.next()?;
+    let getter = format!("get{}{}", first.to_uppercase(), chars.as_str());
+    let getter = *indexed_getters(&claz.name()).iter().find(|g| **g == getter)?;
+    Some(Arc::new(ContainerGet { getter, container: property.to_string() }))
+}
+
+/// port of: IndexedType as a JexlPropertyGet -- invoking it hands out the container
+struct ContainerGet {
+    getter: &'static str,
+    container: String,
+}
+
+impl JexlPropertyGet for ContainerGet {
+    fn invoke(&self, obj: &Value) -> Result<Value, JexlException> {
+        Ok(Value::object(IndexedContainer { object: obj.clone(), getter: self.getter, container: self.container.clone() }))
+    }
+}
+
+/// port of: IndexedType.IndexedContainer -- `c.name` where c's class has a getName(...) but no
+/// getName(): an object whose get(key) calls that getter with the key.
+pub struct IndexedContainer {
+    object: Value,
+    getter: &'static str,
+    container: String,
+}
+
+impl crate::value::HostObject for IndexedContainer {
+    fn class_name(&self) -> String {
+        "org.apache.commons.jexl3.internal.introspection.IndexedType$IndexedContainer".into()
+    }
+    // Object.toString: an identity hash, as in Java
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+fn container_of(v: &Value) -> &IndexedContainer {
+    v.as_host::<IndexedContainer>().expect("indexed container")
+}
+
+/// port of: IndexedType.invokeGet / invokeSet's failure: `"property get error: " +
+/// object.getClass().toString() + "@" + key.toString()` -- and a null key fails on the toString.
+fn container_error(what: &str, object: &Value, key: &Value) -> Result<Value, JexlException> {
+    if key.is_null() {
+        return Err(JexlException::java(
+            "java.lang.NullPointerException",
+            Some("Cannot invoke \"Object.toString()\" because \"key\" is null".into()),
+        ));
+    }
+    Err(JexlException::java(
+        "java.beans.IntrospectionException",
+        Some(format!("property {} error: class {}@{}", what, object.class_name(), key.java_to_string())),
+    ))
+}
+
+const INDEXED_CONTAINER: &[Sig] = sigs!("org.apache.commons.jexl3.internal.introspection.IndexedType$IndexedContainer";
+    // the most specific getter for (key), as IndexedType picks it with a MethodKey
+    "get"("java.lang.Object") -> "java.lang.Object" = |o, a| {
+        let c = container_of(o);
+        match most_specific(&arg_classes(&a[..1]), &candidates(&c.object, c.getter)) {
+            Some(sig) => (sig.body)(&c.object, &a[..1]),
+            None => container_error("get", &c.object, &a[0]),
+        }
+    };
+    // none of the modeled classes has a matching setter
+    "set"("java.lang.Object", "java.lang.Object") -> "java.lang.Object" =
+        |o, a| container_error("set", &container_of(o).object, &a[0]);
+    "getContainerName"() -> "java.lang.String" = |o, _| Ok(Value::string(&container_of(o).container));
+    "getContainerClass"() -> "java.lang.Class" = |o, _| Ok(ClassValue::of(&container_of(o).object.class_name()));
+);
+
 /// port of: the class loader behind JexlUberspect.getClassLoader() — the classes this shim models.
 pub fn load_class(name: &str) -> Option<Value> {
     if !tables_for_class(name).is_empty() || CTORS.iter().any(|c| c.name == name) {
@@ -1603,8 +1694,8 @@ impl JexlUberspect for JdkShim {
                     }
                 }),
                 PropertyResolver::Field => property.as_deref().and_then(|p| discover_field(obj, &claz, p)),
-                // IndexedType needs a getFoo(key)/setFoo(key, value) pair; no modeled JDK class has one
-                PropertyResolver::Container => None,
+                // port of: IndexedType.discover -- a getter is enough, the setter is optional
+                PropertyResolver::Container => property.as_deref().and_then(|p| discover_container(&claz, p)),
             };
             if executor.is_some() {
                 return executor;
@@ -2646,6 +2737,9 @@ fn cp_lower(cp: i32) -> i32 {
 }
 
 const BOOLEAN: &[Sig] = sigs!("java.lang.Boolean";
+    // backed by System.getProperty; a Rust process has no Java system properties, so every name
+    // is unset -- the answer Java gives for any property it does not have
+    "getBoolean"("java.lang.String") -> "boolean" = |_, _| boolean(false);
     "booleanValue"() -> "boolean" = |o, _| Ok(o.clone());
     "parseBoolean"("java.lang.String") -> "boolean" = |_, a| {
         if a[0].is_null() {
@@ -2710,6 +2804,10 @@ fn num_float(o: &Value) -> f32 {
 }
 
 const INTEGER_S: &[Sig] = sigs!("java.lang.Integer";
+    // System.getProperty-backed, like Boolean.getBoolean: every name is unset here
+    "getInteger"("java.lang.String") -> "java.lang.Integer" = |_, _| Ok(Value::Null);
+    "getInteger"("java.lang.String", "int") -> "java.lang.Integer" = |_, a| int(arg_i32(&a[1]));
+    "getInteger"("java.lang.String", "java.lang.Integer") -> "java.lang.Integer" = |_, a| Ok(a[1].clone());
     "parseInt"("java.lang.String") -> "int" = |_, a| parse_int(&a[0], 10);
     "parseInt"("java.lang.String", "int") -> "int" = |_, a| parse_int(&a[0], arg_i32(&a[1]));
     "valueOf"("java.lang.String") -> "java.lang.Integer" = |_, a| parse_int(&a[0], 10);
@@ -2731,6 +2829,9 @@ const INTEGER_S: &[Sig] = sigs!("java.lang.Integer";
 );
 
 const LONG_S: &[Sig] = sigs!("java.lang.Long";
+    "getLong"("java.lang.String") -> "java.lang.Long" = |_, _| Ok(Value::Null);
+    "getLong"("java.lang.String", "long") -> "java.lang.Long" = |_, a| Ok(Value::Long(arg_i64(&a[1])));
+    "getLong"("java.lang.String", "java.lang.Long") -> "java.lang.Long" = |_, a| Ok(a[1].clone());
     "parseLong"("java.lang.String") -> "long" = |_, a| parse_long(&a[0], 10);
     "parseLong"("java.lang.String", "int") -> "long" = |_, a| parse_long(&a[0], arg_i32(&a[1]));
     "valueOf"("java.lang.String") -> "java.lang.Long" = |_, a| parse_long(&a[0], 10);
@@ -4127,10 +4228,14 @@ mod tests {
         let f = f.expect("field");
         assert!(matches!(f.try_invoke(&Value::Integer(7), &Value::string("MAX_VALUE")), Ok(TryResult::Value(_))));
         assert!(matches!(f.try_invoke(&Value::Long(7), &Value::string("MAX_VALUE")), Ok(TryResult::Failed)));
-        // CONTAINER never fires for a JDK type: no modeled class has a getFoo(key) pair
+        // CONTAINER needs a get<X>(...) with no get<X>() beside it: Integer has getInteger(String),
+        // so `integer` is an indexed property, and `x` is nothing
         assert!(s
             .get_property_get_with(&[PropertyResolver::Container], &Value::Integer(0), &Value::string("x"))
             .is_none());
+        assert!(s
+            .get_property_get_with(&[PropertyResolver::Container], &Value::Integer(0), &Value::string("integer"))
+            .is_some());
     }
 
     #[test]
