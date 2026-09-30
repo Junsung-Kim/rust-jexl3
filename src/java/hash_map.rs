@@ -433,6 +433,27 @@ impl<K: JavaHash + Clone, V: Clone> JHashMap<K, V> {
         Some(None)
     }
 
+    /// `get_hashed`, for writing the value in place (what `put` does to an existing mapping).
+    pub fn get_hashed_mut(&mut self, hash: i32, eq: impl Fn(&K) -> bool) -> Option<Option<&mut V>> {
+        let n = self.table.len();
+        if n == 0 {
+            return Some(None);
+        }
+        let hash = hash ^ ((hash as u32) >> 16) as i32;
+        let first = self.table[bucket(hash, n)];
+        if first != NIL && self.nodes[first].tree {
+            return None;
+        }
+        let mut e = first;
+        while e != NIL {
+            if self.nodes[e].hash == hash && eq(&self.nodes[e].key) {
+                return Some(Some(&mut self.nodes[e].value));
+            }
+            e = self.nodes[e].next;
+        }
+        Some(None)
+    }
+
     /// `getNode`
     fn get_node(&self, k: &K) -> usize {
         let n = self.table.len();

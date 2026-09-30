@@ -147,7 +147,14 @@ impl JexlContext for MapContext {
 
     // port of: MapContext.set
     fn set(&self, name: &str, value: Value) -> Result<(), String> {
-        self.map.write().unwrap_or_else(|p| p.into_inner()).put(Value::string(name), value);
+        let mut map = self.map.write().unwrap_or_else(|p| p.into_inner());
+        // HashMap.put on an existing key replaces the value and keeps the key object, so a
+        // variable that is already bound needs no new key -- a loop variable is rebound per turn.
+        if let Some(Some(slot)) = map.get_hashed_mut(str_hash_code(name), |k| is_str(k, name)) {
+            *slot = value;
+            return Ok(());
+        }
+        map.put(Value::string(name), value);
         Ok(())
     }
 

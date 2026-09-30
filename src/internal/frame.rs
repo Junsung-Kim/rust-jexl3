@@ -68,6 +68,18 @@ impl Frame {
         }
     }
 
+    /// `has(s)` then `get(s)` under one lock: None when the register is not declared. Reading a
+    /// local variable asks both, and each used to take the lock on its own.
+    pub fn lookup(&self, s: i32) -> Option<Slot> {
+        if s < 0 {
+            return None;
+        }
+        match self.stack.read().unwrap_or_else(|p| p.into_inner()).get(s as usize) {
+            Some(Slot::Undeclared) | None => None,
+            Some(slot) => Some(slot.clone()),
+        }
+    }
+
     // port of: Frame.set
     pub fn set(&self, r: usize, value: Slot) {
         let mut stack = self.stack.write().unwrap_or_else(|p| p.into_inner());

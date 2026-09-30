@@ -327,8 +327,8 @@ impl Interpreter {
                 Some(f) => f,
             };
             {
-                if frame.has(symbol) {
-                    match frame.get(symbol as usize) {
+                if let Some(slot) = frame.lookup(symbol) {
+                    match slot {
                         Slot::Undefined => {}
                         Slot::Undeclared => {}
                         Slot::Value(value) => {
@@ -952,8 +952,8 @@ impl Interpreter {
                 Some(f) => f,
             };
             {
-                if frame.has(symbol) {
-                    if let Slot::Value(v) = frame.get(symbol as usize) {
+                if let Some(slot) = frame.lookup(symbol) {
+                    if let Slot::Value(v) = slot {
                         return Ok(v);
                     }
                     return Ok(Value::Null);
@@ -1814,12 +1814,10 @@ impl Interpreter {
                 method_name = Some(id.get_name().to_string());
                 if is_context_target {
                     if let Some(frame) = &self.frame {
-                        if frame.has(symbol) {
-                            if let Slot::Value(v) = frame.get(symbol as usize) {
-                                if !v.is_null() {
-                                    functor_value = Some(v);
-                                    isavar = true;
-                                }
+                        if let Some(Slot::Value(v)) = frame.lookup(symbol) {
+                            if !v.is_null() {
+                                functor_value = Some(v);
+                                isavar = true;
                             }
                         }
                     }
