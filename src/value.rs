@@ -364,6 +364,11 @@ pub trait HostObject: Any + Send + Sync {
     fn java_to_string(&self) -> Option<String> {
         None
     }
+    /// Object.toString() as the Java String it is. A Rust String cannot hold a lone surrogate,
+    /// so an object whose text can carry one -- a script rendered from source -- answers here.
+    fn java_to_jstring(&self) -> Option<JString> {
+        self.java_to_string().map(|s| JString::from(s.as_str()))
+    }
     /// Object.equals(other); default is identity
     fn java_equals(&self, _other: &Value) -> Option<bool> {
         None
@@ -644,9 +649,9 @@ impl Value {
                 }
                 b.str("}").build()
             }
-            Value::Object(o) => JString::from(o.java_to_string().unwrap_or_else(|| {
-                format!("{}@{:x}", o.class_name(), Arc::as_ptr(o) as *const () as usize as u32)
-            })),
+            Value::Object(o) => o.java_to_jstring().unwrap_or_else(|| {
+                JString::from(format!("{}@{:x}", o.class_name(), Arc::as_ptr(o) as *const () as usize as u32))
+            }),
         }
     }
 }

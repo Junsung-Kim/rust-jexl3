@@ -65,7 +65,12 @@ impl HostObject for Closure {
 
     // port of: Script.toString — the Debugger rendering when there is no source
     fn java_to_string(&self) -> Option<String> {
-        crate::internal::interpreter::debug_render(self.ast.node(self.script), 0)
+        self.java_to_jstring().map(|s| s.to_rust())
+    }
+
+    // the rendered source keeps a lone surrogate in a string literal, as Java's does
+    fn java_to_jstring(&self) -> Option<crate::java::string::JString> {
+        Some(crate::internal::debugger::Debugger::new().data(self.ast.node(self.script)))
     }
 
     // port of: Closure.equals
