@@ -14,12 +14,20 @@ pub struct Closure {
     /// the ASTJexlLambda node
     pub script: NodeId,
     pub frame: Option<Frame>,
+    /// A lambda evaluated by a TemplateInterpreter is an *anonymous* Closure subclass in Java
+    /// (`TemplateInterpreter$1`), which is observable through `getClass()`.
+    pub from_template: bool,
 }
 
 impl Closure {
     // port of: Closure(Interpreter, ASTJexlLambda)
     pub fn new(ast: Arc<Ast>, script: NodeId, frame: Option<Frame>) -> Closure {
-        Closure { ast, script, frame }
+        Closure { ast, script, frame, from_template: false }
+    }
+
+    /// port of: TemplateInterpreter.visit(ASTJexlScript) — the anonymous Closure subclass
+    pub fn from_template(ast: Arc<Ast>, script: NodeId, frame: Option<Frame>) -> Closure {
+        Closure { ast, script, frame, from_template: true }
     }
 
     pub fn arg_count(&self, ast: &Ast) -> i32 {
@@ -49,6 +57,9 @@ impl Closure {
 
 impl HostObject for Closure {
     fn class_name(&self) -> String {
+        if self.from_template {
+            return "org.apache.commons.jexl3.internal.TemplateInterpreter$1".into();
+        }
         "org.apache.commons.jexl3.internal.Closure".into()
     }
 
