@@ -4,6 +4,13 @@ A Rust port of [Apache Commons JEXL](https://commons.apache.org/proper/commons-j
 behaviorally compatible with the Java library: the same grammar, the same results, the same result
 *types*, the same side effects, and the same exception messages.
 
+> **Not the other JEXL.** The `jexl` package on npm and the `jexl-eval` crate implement
+> [TomFrost/Jexl](https://github.com/TomFrost/Jexl), a different expression language that borrowed
+> the name. This is the Apache one: `var`, lambdas, loops, namespaces, pragmas, JXLT templates.
+
+> rust-jexl is an independent port. It is not affiliated with, endorsed by, or sponsored by The
+> Apache Software Foundation.
+
 Compatibility is not a claim, it is a test: every subsystem is measured against the official
 `commons-jexl3-3.2.1.jar` running on a JVM, case by case, and a difference is a bug. See
 [PROGRESS.md](PROGRESS.md) for what is proven and how to re-run it, and
@@ -63,6 +70,16 @@ constructors and iteration go through the same `JexlUberspect` SPI Java uses; th
 script can touch are modeled, and your own Rust types plug in as host objects.
 [COMPATIBILITY.md](COMPATIBILITY.md) lists the full set of exclusions and the handful of pinned
 divergences.
+
+## Performance
+
+Measured against the jar on Corretto 25 (`cargo run --release --example bench` and
+`rustjexl.oracle.Bench`): parsing is faster here — 118 ns against 15179 ns on a script the Java
+cache cannot hold — but **evaluation is currently 2-7x slower**. Nothing in the interpreter has
+been tuned yet. The numbers are in [PROGRESS.md](PROGRESS.md).
+
+JEXL's parser backtracks exponentially on deeply nested unterminated literals, in Java as well as
+here; bound the size of untrusted input.
 
 ## License
 

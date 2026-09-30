@@ -1,7 +1,16 @@
 rust-jexl
 Copyright 2026 The rust-jexl authors
 
-This product is a derivative work of Apache Commons JEXL.
+This product is a derivative work of Apache Commons JEXL. It is a translation of
+that work into Rust and IT HAS BEEN CHANGED: the Java sources were rewritten,
+Java reflection was replaced by an SPI with a modelled subset of the JDK, and a
+small number of behaviours differ. Every difference known to the authors is
+listed in COMPATIBILITY.md and MISMATCHES.md.
+
+rust-jexl is not affiliated with, endorsed by, or sponsored by The Apache
+Software Foundation. "Apache", "Apache Commons" and "JEXL" are trademarks of
+the ASF; they are used here only to identify the work this is a port of, which
+the Apache License grants no trademark rights to do otherwise (section 6).
 
 Apache Commons JEXL
 Copyright 2001-2021 The Apache Software Foundation
@@ -15,6 +24,10 @@ retrieved from https://gitbox.apache.org/repos/asf/commons-jexl.git .
 Each file names the Java class it ports on its first line; the grammar in
 src/parser/parser_gen.rs and src/parser/parser_token_manager_gen.rs is a
 mechanical translation of the ParserGeneratorCC output of Parser.jjt.
+
+The differential fixtures under tests/data/upstream/ are JEXL sources collected
+from the Apache Commons JEXL test suite at the same tag, and are likewise a
+derivative work of it.
 
 The differential test harness under oracle/ links against the unmodified
 org.apache.commons:commons-jexl3:3.2.1 artifact at test time; that artifact is
