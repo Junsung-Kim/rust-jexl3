@@ -29,6 +29,12 @@ pub trait JexlContext: Send + Sync {
     /// port of: JexlContext.has
     fn has(&self, name: &str) -> bool;
 
+    /// port of: MapContext.clear -- a public method a script can call as `clear()`, like any
+    /// public method of the context object. None: this context has no such method.
+    fn clear(&self) -> Option<()> {
+        None
+    }
+
     /// port of: JexlContext.NamespaceResolver.resolveNamespace
     fn resolve_namespace(&self, _name: Option<&str>) -> Option<Value> {
         None
@@ -135,6 +141,11 @@ impl MapContext {
 }
 
 impl JexlContext for MapContext {
+    fn clear(&self) -> Option<()> {
+        self.map.write().unwrap_or_else(|p| p.into_inner()).clear();
+        Some(())
+    }
+
     // port of: MapContext.get
     fn get(&self, name: &str) -> Option<Value> {
         // Every variable read lands here, so it must not allocate a key to look one up.

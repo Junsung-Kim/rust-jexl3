@@ -1795,6 +1795,32 @@ impl Interpreter {
         }
     }
 
+    /// port of: Interpreter.CallDispatcher.isContextMethod -- the context object's own public
+    /// methods, which a script reaches like any other: JexlContext.get/set/has, MapContext.clear,
+    /// and the equals(Object) it inherits. Measured: `has('x')`, `set('k', 5)` and `clear()` work
+    /// as plain function calls, and `x.set(v)` with x a String binds the variable x names.
+    fn context_method(&self, name: &str, args: &[Value]) -> Option<R> {
+        // a String parameter takes null too; the context's names are Strings
+        let text = |v: &Value| match v {
+            Value::String(s) => Some(s.to_rust()),
+            _ => None,
+        };
+        match (name, args.len()) {
+            ("get", 1) if args[0].is_null() => Some(Ok(Value::Null)),
+            ("get", 1) => text(&args[0]).map(|n| Ok(self.context.get(&n).unwrap_or(Value::Null))),
+            ("has", 1) if args[0].is_null() => Some(Ok(Value::Boolean(false))),
+            ("has", 1) => text(&args[0]).map(|n| Ok(Value::Boolean(self.context.has(&n)))),
+            // ponytail: set(null, v) would bind a null key, which a &str-keyed context cannot hold
+            ("set", 2) => text(&args[0]).map(|n| match self.context.set(&n, args[1].clone()) {
+                Ok(()) => Ok(Value::Null),
+                Err(m) => Err(JexlException::java("java.lang.UnsupportedOperationException", Some(m))),
+            }),
+            ("clear", 0) => self.context.clear().map(|()| Ok(Value::Null)),
+            ("equals", 1) => Some(Ok(Value::Boolean(false))),
+            _ => None,
+        }
+    }
+
     /// An arithmetic failure escaping a *method* call is the raw throwable, not an operator error.
     fn bare(&self, e: ArithError) -> JexlException {
         match e {
@@ -1875,13 +1901,18 @@ impl Interpreter {
 
                             }
                         }
-                        // ...or an arithmetic function, with the target prepended: `x.empty()`
-                        // reaches JexlArithmetic.empty(Object).
-                        // ponytail: Java also tries isContextMethod(name, pargv) first; a context
-                        // here exposes no methods, so there is nothing to reflect over.
+                        // ...then, with the target prepended, a method of the context itself
+                        // (`x.set(v)` binds the variable x names), and an arithmetic function:
+                        // `x.empty()` reaches JexlArithmetic.empty(Object).
                         let mut pargv = Vec::with_capacity(argv.len() + 1);
                         pargv.push(target.clone());
                         pargv.extend(argv.iter().cloned());
+                        if let Some(r) = self.context_method(name, &pargv) {
+                            match self.invoked(node, name, r) {
+                                Err(e) if e.is_method_error() => break 'dispatch,
+                                r => return r,
+                            }
+                        }
                         if let Some(r) = self.arithmetic_method(name, &pargv) {
                             match self.invoked(node, name, r) {
 
@@ -1906,7 +1937,14 @@ impl Interpreter {
                             }
                         }
                     } else {
-                        // a function call with no namespace: try the default namespace
+                        // a function call with no namespace: the context object's own methods
+                        // first (isTargetMethod on the context), then the default namespace
+                        if let Some(r) = self.context_method(name, &argv) {
+                            match self.invoked(node, name, r) {
+                                Err(e) if e.is_method_error() => break 'dispatch,
+                                r => return r,
+                            }
+                        }
                         let namespace = self.resolve_namespace(None, node)?;
                         if !namespace.is_null() {
                             if let Some(vm) = self.uberspect.get_method(&namespace, name, &argv) {
