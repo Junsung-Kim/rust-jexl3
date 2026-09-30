@@ -2,6 +2,7 @@ pub mod decode;
 pub mod encode;
 pub mod hosts;
 pub mod json;
+pub mod upstream;
 
 use json::Json;
 use rust_jexl::java::big_decimal::{MathContext, RoundingMode};

@@ -256,7 +256,14 @@ impl Interpreter {
         node
     }
 
-    /// Wraps an arithmetic failure the way each operator's catch block does.
+    /// `throw new JexlException(node, msg, xrt)` — the unary operators blame their own node.
+    fn node_exception(&self, node: NodeRef<'_>, msg: &str, e: ArithError) -> JexlException {
+        let cause = self.arith_exception(node, e);
+        JexlException::new(Some(self.handle(node)), msg, Some(cause))
+    }
+
+    /// Wraps an arithmetic failure the way `*`, `/`, `%`, `!=` and `..` do: the null operand's
+    /// own node carries the blame.
     fn op_exception(&self, node: NodeRef<'_>, msg: &str, e: ArithError, left: &Value, right: &Value) -> JexlException {
         let cause = self.arith_exception(node, e);
         let xnode = self.find_null_operand(&cause, node, left, right);
@@ -490,6 +497,15 @@ impl Interpreter {
         let argc = closure.arg_count(&ast);
         self.block = Some(LexicalFrame::new(self.frame.clone()).define_args(argc));
         let script = ast.node(closure.script);
+        // jjtree leaves `children` null until the first jjtAddChild, so a script with no
+        // statements (a lone `#pragma`) makes Java's jjtGetChild(-1) dereference null.
+        if script.num_children() == 0 {
+            self.block = None;
+            return Err(JexlException::java(
+                "java.lang.NullPointerException",
+                Some("Cannot load from object array because \"this.children\" is null".into()),
+            ));
+        }
         let body = script.child(script.num_children() - 1);
         let result = self.interpret(body);
         if let Some(b) = &mut self.block {
@@ -610,7 +626,7 @@ impl Interpreter {
                 match self.arithmetic.complement(&arg) {
                     Ok(v) => Ok(v),
                     Err(e) if !is_arithmetic_exception(&e) => Err(self.arith_exception(node, e)),
-                    Err(e) => Err(self.op_exception(node, "~ error", e, &arg, &Value::Null)),
+                    Err(e) => Err(self.node_exception(node, "~ error", e)),
                 }
             }
             JJTNOTNODE => {
@@ -622,7 +638,7 @@ impl Interpreter {
                 match self.arithmetic.not(&val) {
                     Ok(v) => Ok(v),
                     Err(e) if !is_arithmetic_exception(&e) => Err(self.arith_exception(node, e)),
-                    Err(e) => Err(self.op_exception(node, "! error", e, &val, &Value::Null)),
+                    Err(e) => Err(self.node_exception(node, "! error", e)),
                 }
             }
             JJTANDNODE => self.visit_and(node, data),

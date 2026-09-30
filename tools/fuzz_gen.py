@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Grammar-driven JEXL 3.2.1 case generator (productions follow Parser.jjt), seeded and reproducible.
 
-Usage: fuzz_gen.py N SEED [--ops ast|exec] [--mutate P] > cases.jsonl
+Usage: fuzz_gen.py N SEED [--ops ast|exec|parsed|api] [--mutate P] > cases.jsonl
 
 Each case varies engine options/features, kind (script/expression), parameters, and (for exec)
 draws context values from pools covering every Java type, null, the JSON-null host object,
@@ -360,6 +360,12 @@ def main():
             case["ops"] = ["ast", "vars", "params", "locals", "pragmas"]
         elif ops == "parsed":
             case["ops"] = ["parsed"]
+        elif ops == "api":
+            # the JexlScript surface the exec suite never touches
+            case["ops"] = ["params", "locals", "unbound", "toString", "indent", "curry", "callable"]
+            case["ctx"] = context(r)
+            # curry and callable both take args, whether or not the script declares parameters
+            case["args"] = [r.choice(CTX_VALUES) for _ in range(r.randint(0, 3))]
         else:
             case["ops"] = ["vars", "exec", "ctx"]
             case["ctx"] = context(r)

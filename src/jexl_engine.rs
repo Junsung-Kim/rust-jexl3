@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::internal::engine::{get_variables_mode, pragmas_as_map};
-use crate::internal::frame::create_frame;
+use crate::internal::debugger::Debugger;
+use crate::internal::frame::{create_frame, Frame};
+use crate::internal::script::Closure;
 use crate::internal::interpreter::{EngineRef, Interpreter};
 use crate::introspection::uberspect::Uberspect;
 use crate::introspection::JexlUberspect;
@@ -81,10 +83,14 @@ impl SoftCache {
 }
 
 /// port of: org.apache.commons.jexl3.internal.Script
+#[derive(Clone)]
 pub struct JexlScript {
     engine: Arc<JexlEngine>,
     source: Option<String>,
     parsed: Arc<Parsed>,
+    /// port of: Closure.frame — Some once `curry` has bound arguments, which is exactly what makes
+    /// a Java `Script` a `Closure`.
+    frame: Option<Frame>,
 }
 
 impl JexlEngine {
@@ -127,7 +133,7 @@ impl JexlEngine {
     ) -> Result<JexlScript, JexlException> {
         let source = crate::internal::engine::trim_source(script_text);
         let parsed = self.parse(info, &features, &source, names)?;
-        Ok(JexlScript { engine: self.clone(), source: Some(source), parsed })
+        Ok(JexlScript { engine: self.clone(), source: Some(source), parsed, frame: None })
     }
 
     /// port of: Engine.parse(JexlInfo, JexlFeatures, String, Scope)
@@ -335,6 +341,65 @@ impl JexlScript {
         self.source.as_deref()
     }
 
+    /// port of: Script.getParsedText()
+    pub fn get_parsed_text(&self) -> JString {
+        self.get_parsed_text_indent(2)
+    }
+
+    /// port of: Script.getParsedText(int)
+    pub fn get_parsed_text_indent(&self, indent: i32) -> JString {
+        let mut debugger = Debugger::new();
+        debugger.set_indentation(indent);
+        debugger.debug_r(self.parsed.node(), false);
+        debugger.to_jstring()
+    }
+
+    /// port of: Script.toString — the source if there is one, the rendered tree otherwise.
+    pub fn java_to_jstring(&self) -> JString {
+        match &self.source {
+            Some(source) => JString::from(source.as_str()),
+            None => {
+                let mut debugger = Debugger::new();
+                debugger.debug_r(self.parsed.node(), false);
+                debugger.to_jstring()
+            }
+        }
+    }
+
+    /// The Java class a script reports: currying turns a `Script` into a `Closure`.
+    pub fn class_name(&self) -> String {
+        if self.frame.is_some() {
+            "org.apache.commons.jexl3.internal.Closure".into()
+        } else {
+            "org.apache.commons.jexl3.internal.Script".into()
+        }
+    }
+
+    /// port of: Script.curry(Object...) — `new Closure(this, args)`, or `this` when the script
+    /// declares no parameters to bind.
+    pub fn curry(&self, args: &[Value]) -> JexlScript {
+        let scopes = self.parsed.ast.scopes_ref();
+        let scope = self.parsed.node().script().and_then(|s| s.get_scope());
+        let parameters = scope.map(|s| scopes.get(s).get_parameters()).unwrap_or_default();
+        if parameters.is_empty() {
+            return self.clone();
+        }
+        // port of: Closure(Script, Object[]) — a closure re-curries its own frame
+        let frame = match &self.frame {
+            Some(f) => Some(f.assign(scopes.get(f.scope()), Some(args))),
+            None => scope.and_then(|s| create_frame(scopes, s, None, Some(args))),
+        };
+        JexlScript { engine: self.engine.clone(), source: self.source.clone(), parsed: self.parsed.clone(), frame }
+    }
+
+    /// port of: Script.getUnboundParameters / Closure.getUnboundParameters
+    pub fn get_unbound_parameters(&self) -> Vec<String> {
+        match &self.frame {
+            Some(f) => f.get_unbound_parameters(self.parsed.ast.scopes_ref().get(f.scope())),
+            None => self.get_parameters(),
+        }
+    }
+
     /// port of: Script.getVariables
     pub fn get_variables(&self) -> Vec<Vec<JString>> {
         get_variables_mode(&self.parsed, self.engine.collect_mode)
@@ -365,24 +430,95 @@ impl JexlScript {
         self.execute_args(context, &[])
     }
 
-    /// port of: Script.execute(JexlContext, Object...)
+    /// port of: Script.execute(JexlContext, Object...) and Closure.execute(JexlContext, Object...)
     pub fn execute_args(&self, context: Arc<dyn JexlContext>, args: &[Value]) -> Result<Value, JexlException> {
         let options = self.engine.options_for_script(&self.parsed, context.as_ref());
         let jexl = self.engine.engine_ref(&options);
-        let node = self.parsed.node();
-        let frame = node
-            .script()
-            .and_then(|s| s.get_scope())
-            .and_then(|scope| create_frame(self.parsed.ast.scopes_ref(), scope, None, if args.is_empty() { None } else { Some(args) }));
-        let mut interpreter = Interpreter::new(jexl, self.parsed.ast.clone(), options, context, frame);
+        let mut interpreter =
+            Interpreter::new(jexl, self.parsed.ast.clone(), options, context, self.local_frame(args));
         let ast = self.parsed.ast.clone();
-        let root = ast.node(self.parsed.root);
-        interpreter.interpret(root)
+        if self.frame.is_some() {
+            // Closure.execute runs the lambda body, not the script
+            return interpreter.run_closure(&Closure::new(ast, self.parsed.root, None));
+        }
+        interpreter.interpret(ast.node(self.parsed.root))
+    }
+
+    /// The frame the interpreter starts with: `frame.assign(args)` for a closure, a fresh frame
+    /// from the script's own scope otherwise.
+    fn local_frame(&self, args: &[Value]) -> Option<Frame> {
+        let scopes = self.parsed.ast.scopes_ref();
+        match &self.frame {
+            Some(f) => Some(f.assign(scopes.get(f.scope()), Some(args))),
+            None => self
+                .parsed
+                .node()
+                .script()
+                .and_then(|s| s.get_scope())
+                .and_then(|scope| {
+                    create_frame(scopes, scope, None, if args.is_empty() { None } else { Some(args) })
+                }),
+        }
     }
 
     /// port of: Script.evaluate(JexlContext) — the JexlExpression face of the same object
     pub fn evaluate(&self, context: Arc<dyn JexlContext>) -> Result<Value, JexlException> {
         self.execute(context)
+    }
+
+    /// port of: Script.callable(JexlContext)
+    pub fn callable_ctx(&self, context: Arc<dyn JexlContext>) -> ScriptCallable {
+        self.callable(context, &[])
+    }
+
+    /// port of: Script.callable(JexlContext, Object...)
+    pub fn callable(&self, context: Arc<dyn JexlContext>, args: &[Value]) -> ScriptCallable {
+        ScriptCallable {
+            script: self.clone(),
+            context,
+            args: args.to_vec(),
+            result: Mutex::new(None),
+        }
+    }
+}
+
+/// port of: org.apache.commons.jexl3.internal.Script.Callable
+///
+/// Java's Callable holds the Interpreter it was built with so `cancel()` can reach it; this one
+/// holds the pieces and builds the interpreter on `call()`, which is observable only through
+/// cancellation, so `cancel()` goes through the context's handle the same way the interpreter does.
+pub struct ScriptCallable {
+    script: JexlScript,
+    context: Arc<dyn JexlContext>,
+    args: Vec<Value>,
+    /// Java memoizes: the second `call()` returns the first result without re-interpreting.
+    result: Mutex<Option<Result<Value, JexlException>>>,
+}
+
+impl ScriptCallable {
+    /// port of: Script.Callable.call
+    pub fn call(&self) -> Result<Value, JexlException> {
+        let mut cell = self.result.lock().unwrap_or_else(|p| p.into_inner());
+        if cell.is_none() {
+            *cell = Some(self.script.execute_args(self.context.clone(), &self.args));
+        }
+        cell.clone().expect("just computed")
+    }
+
+    /// port of: Script.Callable.cancel
+    pub fn cancel(&self) -> bool {
+        match self.context.get_cancellation() {
+            Some(flag) => !flag.swap(true, std::sync::atomic::Ordering::SeqCst),
+            None => false,
+        }
+    }
+
+    /// port of: Script.Callable.isCancelled
+    pub fn is_cancelled(&self) -> bool {
+        self.context
+            .get_cancellation()
+            .map(|f| f.load(std::sync::atomic::Ordering::SeqCst))
+            .unwrap_or(false)
     }
 }
 

@@ -226,6 +226,52 @@ public final class Oracle {
                             case "locals": r.put("locals", strings(script.getLocalVariables())); break;
                             case "pragmas": r.put("pragmas", encode(script.getPragmas())); break;
                             case "parsed": r.put("parsed", script.getParsedText()); break;
+                            case "indent": {
+                                Map<String, Object> texts = new LinkedHashMap<>();
+                                for (int i : new int[] {-1, 0, 1, 2, 4, 8}) {
+                                    texts.put(Integer.toString(i), script.getParsedText(i));
+                                }
+                                r.put("indent", texts);
+                                break;
+                            }
+                            case "unbound": r.put("unbound", strings(script.getUnboundParameters())); break;
+                            case "toString": r.put("toString", script.toString()); break;
+                            case "curry": {
+                                Map<String, Object> c = new LinkedHashMap<>();
+                                try {
+                                    JexlScript curried = script.curry(args);
+                                    c.put("class", curried.getClass().getName());
+                                    c.put("params", strings(curried.getParameters()));
+                                    c.put("unbound", strings(curried.getUnboundParameters()));
+                                    c.put("locals", strings(curried.getLocalVariables()));
+                                    c.put("parsed", curried.getParsedText());
+                                    c.put("sourceText", curried.getSourceText());
+                                    try {
+                                        c.put("result", encode(curried.execute(ctx)));
+                                    } catch (RuntimeException xexec) {
+                                        c.put("error", error(xexec));
+                                    } catch (StackOverflowError xso) {
+                                        c.put("error", error(xso));
+                                    }
+                                } catch (RuntimeException xcurry) {
+                                    c.put("error", error(xcurry));
+                                }
+                                r.put("curry", c);
+                                break;
+                            }
+                            case "callable": {
+                                Map<String, Object> c = new LinkedHashMap<>();
+                                try {
+                                    java.util.concurrent.Callable<Object> call = script.callable(ctx, args);
+                                    c.put("result", encode(call.call()));
+                                } catch (Exception xcall) {
+                                    c.put("error", error(xcall));
+                                } catch (StackOverflowError xso) {
+                                    c.put("error", error(xso));
+                                }
+                                r.put("callable", c);
+                                break;
+                            }
                             case "ast": r.put("ast", ast(script)); break;
                             case "exec": {
                                 try {

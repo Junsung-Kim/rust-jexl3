@@ -249,3 +249,129 @@ fn execution_matches_oracle() {
         failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n")
     );
 }
+
+// ---------------------------------------------------------------- JexlScript API
+
+/// The `JexlScript` surface the execution suite never touches: `getParsedText`, `toString`,
+/// `getUnboundParameters`, `curry` and `callable`.
+fn run_api_case(case: &Json) -> Json {
+    let src = case.get("src").and_then(Json::string).expect("src");
+    let kind = case.get("kind").and_then(Json::string).unwrap_or_else(|| "script".into());
+    let params: Option<Vec<String>> = case
+        .get("params")
+        .and_then(Json::arr)
+        .map(|a| a.iter().filter_map(Json::string).collect());
+    let args: Vec<Value> = case
+        .get("args")
+        .and_then(Json::arr)
+        .map(|a| a.iter().map(decode).collect())
+        .unwrap_or_default();
+    let engine = build_engine(case.get("engine"));
+    let context = Arc::new(MapContext::new());
+    if let Some(Json::Obj(kv)) = case.get("ctx") {
+        for (name, v) in kv {
+            context.set(name, decode(v)).expect("bind");
+        }
+    }
+    let info = rust_jexl::jexl_info::JexlInfo::new(Some("case".to_string()), 1, 1);
+    let script = if kind == "expression" {
+        engine.create_expression(Some(info), &src)
+    } else {
+        engine.create_script_info(Some(info), &src, params.as_deref())
+    };
+    let script = match script {
+        Err(e) => return Json::Obj(vec![("parse".into(), error_json(&e))]),
+        Ok(s) => s,
+    };
+    let jstrings = |v: Vec<String>| Json::Arr(v.iter().map(|s| Json::str(s)).collect());
+    let mut out: Vec<(String, Json)> = vec![
+        ("params".into(), jstrings(script.get_parameters())),
+        ("locals".into(), jstrings(script.get_local_variables())),
+        ("unbound".into(), jstrings(script.get_unbound_parameters())),
+        ("toString".into(), Json::Str(script.java_to_jstring().units().to_vec())),
+        (
+            "indent".into(),
+            Json::Obj(
+                [-1, 0, 1, 2, 4, 8]
+                    .iter()
+                    .map(|i| (i.to_string(), Json::Str(script.get_parsed_text_indent(*i).units().to_vec())))
+                    .collect(),
+            ),
+        ),
+    ];
+
+    let curried = script.curry(&args);
+    let mut c: Vec<(String, Json)> = vec![
+        ("class".into(), Json::str(&curried.class_name())),
+        ("params".into(), jstrings(curried.get_parameters())),
+        ("unbound".into(), jstrings(curried.get_unbound_parameters())),
+        ("locals".into(), jstrings(curried.get_local_variables())),
+        ("parsed".into(), Json::Str(curried.get_parsed_text().units().to_vec())),
+        (
+            "sourceText".into(),
+            curried.get_source_text().map(Json::str).unwrap_or(Json::Null),
+        ),
+    ];
+    match curried.execute(context.clone()) {
+        Ok(v) => c.push(("result".into(), encode(&v))),
+        Err(e) => c.push(("error".into(), error_json(&e))),
+    }
+    out.push(("curry".into(), Json::Obj(c)));
+
+    let callable = script.callable(context.clone(), &args);
+    out.push((
+        "callable".into(),
+        Json::Obj(match callable.call() {
+            Ok(v) => vec![("result".into(), encode(&v))],
+            Err(e) => vec![("error".into(), error_json(&e))],
+        }),
+    ));
+    Json::Obj(out)
+}
+
+#[test]
+fn script_api_matches_oracle() {
+    let cp = std::env::var("API_CASES").unwrap_or_else(|_| "tests/data/exec/api_cases.jsonl".into());
+    let ep = std::env::var("API_EXPECTED").unwrap_or_else(|_| "tests/data/exec/api_expected.jsonl".into());
+    let cases = std::fs::read_to_string(&cp).unwrap_or_else(|e| panic!("{}: {}", cp, e));
+    let expected = std::fs::read_to_string(&ep).unwrap_or_else(|e| panic!("{}: {}", ep, e));
+    let mut failures: Vec<String> = Vec::new();
+    let (mut n, mut skipped) = (0usize, 0usize);
+    for (c, e) in cases.lines().zip(expected.lines()) {
+        let case = json::parse(c).expect("case json");
+        let want = json::parse(e).expect("expected json");
+        if want.get("timeout").is_some() || want.get("harness_error").is_some() {
+            skipped += 1;
+            continue;
+        }
+        n += 1;
+        if std::env::var("API_TRACE").is_ok() {
+            eprintln!("case {}", case.get("id").and_then(Json::string).unwrap_or_default());
+        }
+        let got = common::normalize(&run_api_case(&case));
+        for field in ["parse", "params", "locals", "unbound", "toString", "indent", "curry", "callable"] {
+            let w = want.get(field).map(common::normalize);
+            let g = got.get(field).cloned();
+            if w != g {
+                failures.push(format!(
+                    "{}: src={:?}\n  field {}\n  want {}\n  got  {}",
+                    case.get("id").and_then(Json::string).unwrap_or_default(),
+                    case.get("src").and_then(Json::string).unwrap_or_default(),
+                    field,
+                    w.map(|x| json::to_string(&x)).unwrap_or_else(|| "-".into()),
+                    g.map(|x| json::to_string(&x)).unwrap_or_else(|| "-".into()),
+                ));
+                break;
+            }
+        }
+    }
+    assert!(n > 0, "no cases");
+    assert!(
+        failures.is_empty(),
+        "{} of {} script api cases differ (skipped {}):\n{}",
+        failures.len(),
+        n,
+        skipped,
+        failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n")
+    );
+}
