@@ -153,12 +153,61 @@ fn nfe(text: &str) -> JexlException {
     JexlException::java("java.lang.NumberFormatException", Some(format!("For input string: \"{}\"", text)))
 }
 
+/// Java widens to `int` from Byte, Short, Integer and Character, and from nothing else.
+fn is_int_arg(v: &Value) -> bool {
+    matches!(v, Value::Byte(_) | Value::Short(_) | Value::Integer(_) | Value::Character(_))
+}
+
 fn is_string_arg(v: &Value) -> bool {
     matches!(v, Value::String(_) | Value::Null)
 }
 
 fn is_null_like(v: &Value) -> bool {
     v.is_null() || v.as_host::<JsonNull>().is_some()
+}
+
+/// `String.valueOf(o)` for the `concat` head; null is the string "null" only for the varargs tail,
+/// but Java's `new StringBuilder(String)` NPEs on a null head.
+pub fn head_string(v: &Value) -> Result<String, JexlException> {
+    match v {
+        Value::Null => Err(JexlException::java(
+            "java.lang.NullPointerException",
+            Some("Cannot invoke \"String.length()\" because \"str\" is null".into()),
+        )),
+        other => Ok(other.java_to_string()),
+    }
+}
+
+fn to_long(v: &Value) -> Result<i64, JexlException> {
+    match v {
+        Value::Byte(b) => Ok(*b as i64),
+        Value::Short(s) => Ok(*s as i64),
+        Value::Integer(i) => Ok(*i as i64),
+        Value::Long(l) => Ok(*l),
+        Value::Float(f) => Ok(*f as i64),
+        Value::Double(d) => Ok(*d as i64),
+        other => {
+            let text = other.java_to_string();
+            let t = text.trim();
+            t.parse::<i64>().map_err(|_| nfe(t))
+        }
+    }
+}
+
+fn to_double(v: &Value) -> Result<f64, JexlException> {
+    match v {
+        Value::Byte(b) => Ok(*b as f64),
+        Value::Short(s) => Ok(*s as f64),
+        Value::Integer(i) => Ok(*i as f64),
+        Value::Long(l) => Ok(*l as f64),
+        Value::Float(f) => Ok(*f as f64),
+        Value::Double(d) => Ok(*d),
+        other => {
+            let text = other.java_to_string();
+            let t = text.trim();
+            t.parse::<f64>().map_err(|_| nfe(t))
+        }
+    }
 }
 
 fn to_int(v: &Value) -> Result<i32, JexlException> {
@@ -225,6 +274,51 @@ impl HostIntrospector for TestHosts {
                 ("nvl", 2) => HostMethod {
                     ret: "java.lang.Object",
                     call: |_, a| Ok(if is_null_like(&a[0]) { a[1].clone() } else { a[0].clone() }),
+                },
+                // long absAsInt64(Object): Number.longValue(), else Long.parseLong(String.valueOf(o).trim())
+                ("absAsInt64", 1) => HostMethod {
+                    ret: "long",
+                    call: |_, a| Ok(Value::Long(to_long(&a[0])?.wrapping_abs())),
+                },
+                // double absAsDouble(Object): Number.doubleValue(), else Double.parseDouble(...)
+                ("absAsDouble", 1) => HostMethod {
+                    ret: "double",
+                    call: |_, a| Ok(Value::Double(to_double(&a[0])?.abs())),
+                },
+                // String concat(String head, Object... rest)
+                ("concat", n) if n >= 1 && is_string_arg(&args[0]) => HostMethod {
+                    ret: "java.lang.String",
+                    call: |_, a| {
+                        let mut out = crate::common::hosts::head_string(&a[0])?;
+                        for r in &a[1..] {
+                            out.push_str(&r.java_to_string());
+                        }
+                        Ok(Value::string(&out))
+                    },
+                },
+                // String kind(int|long|double|String|Object): the overload Java picks by argument type
+                ("kind", 1) => HostMethod {
+                    ret: "java.lang.String",
+                    call: |_, a| {
+                        Ok(Value::string(match &a[0] {
+                            Value::Byte(_) | Value::Short(_) | Value::Integer(_) | Value::Character(_) => "int",
+                            Value::Long(_) => "long",
+                            Value::Float(_) | Value::Double(_) => "double",
+                            Value::String(_) => "String",
+                            _ => "Object",
+                        }))
+                    },
+                },
+                // int sum(int, int) / double sum(double, double): both parameters are primitive,
+                // so Java's introspector applies widening and nothing else — a String argument
+                // makes the method unsolvable rather than parsed.
+                ("sum", 2) if is_int_arg(&args[0]) && is_int_arg(&args[1]) => HostMethod {
+                    ret: "int",
+                    call: |_, a| Ok(Value::Integer(to_int(&a[0])?.wrapping_add(to_int(&a[1])?))),
+                },
+                ("sum", 2) if args[0].is_number() && args[1].is_number() => HostMethod {
+                    ret: "double",
+                    call: |_, a| Ok(Value::Double(to_double(&a[0])? + to_double(&a[1])?)),
                 },
                 _ => return None,
             };
