@@ -1,40 +1,39 @@
 # Publishing
 
-Everything here needs credentials, so it is a runbook rather than a script. The repository is
-ready otherwise: `sh tools/verify.sh` is the gate, `cargo package` succeeds at 344 KiB, the
-licence and NOTICE are in place, and no private data is in the history.
+Releases go out from GitHub Actions through crates.io
+[Trusted Publishing](https://crates.io/docs/trusted-publishing): no token is stored anywhere.
 
-## 1. Names
+## Releasing a version
 
-Crate `rust-jexl3`, repository `https://github.com/Junsung-Kim/rust-jexl3`, both set in
-`Cargo.toml`. `jexl`, `jexl-eval` and `jexl-parser` on crates.io are a *different* expression
-language (TomFrost's JavaScript JEXL), which is why the name says which JEXL this is.
+1. Move the `[Unreleased]` notes in [CHANGELOG.md](CHANGELOG.md) under `## [X.Y.Z] - date`, and
+   add its compare link at the bottom.
+2. Set `version = "X.Y.Z"` in `Cargo.toml`.
+3. Run the last gate locally: `sh tools/verify.sh --full`.
+4. Commit, then tag and push:
 
-## 2. Create the repository and push
+   ```sh
+   git tag -a vX.Y.Z -m "rust-jexl3 X.Y.Z"
+   git push origin main vX.Y.Z
+   ```
 
-```sh
-gh auth login                       # interactive; in Claude Code type it as `! gh auth login`
-git remote add origin https://github.com/Junsung-Kim/rust-jexl3.git
-git push -u origin master
-```
+[`release.yml`](.github/workflows/release.yml) then checks that the tag names the version in
+`Cargo.toml`, runs the tests, publishes to crates.io and opens the GitHub release with the
+CHANGELOG section as its notes.
 
-## 3. Publish the crate
+A published version can be yanked but never replaced, and a crate name is never freed. Read
+what `cargo package --list` includes before tagging.
 
-```sh
-cargo login                         # token from https://crates.io/settings/tokens
-sh tools/verify.sh --full           # last gate: suites, upstream corpus, a fresh 8k sample
-cargo publish --dry-run
-cargo publish
-```
+## How the trust is set up
 
-`cargo publish` is irreversible: a version can be yanked but never replaced, and a crate name is
-never freed. Read what `cargo package --list` includes first.
+- crates.io, crate settings → Trusted Publishing: repository `Junsung-Kim/rust-jexl3`, workflow
+  `release.yml`, environment `release`.
+- GitHub, repository settings → Environments → `release`: deployments only from tags `v*`.
 
-## 4. Before the first release, decide what to say about
+0.1.0 was published by hand with an API token, since Trusted Publishing needs the crate to exist
+first.
 
-- **Version.** `0.1.0` is right while the differential suites still report the mismatches in
-  [MISMATCHES.md](MISMATCHES.md). Say so in the release notes rather than in a footnote.
-- **Performance.** Evaluation is 2-7x slower than the JVM (see PROGRESS.md). Better to lead with
-  it than to be found out.
-- **Scope.** [COMPATIBILITY.md](COMPATIBILITY.md) lists what a script cannot reach: no reflection
-  over arbitrary Java classes, no `java.util.Date`, no JSR-223.
+## Names
+
+Crate `rust-jexl3`, repository `https://github.com/Junsung-Kim/rust-jexl3`. `jexl`, `jexl-eval`
+and `jexl-parser` on crates.io are a *different* expression language (TomFrost's JavaScript
+JEXL), which is why the name says which JEXL this is.

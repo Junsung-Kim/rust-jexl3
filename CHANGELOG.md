@@ -26,7 +26,7 @@ First release: a port of Apache Commons JEXL 3.2.1.
 ### Verified
 - Differential suites against `commons-jexl3-3.2.1.jar`: execution 5,959 cases and script API
   2,976 cases with no unexplained difference, plus lexer, parser, arithmetic, templates and 633
-  cases taken from the upstream test sources. See [MISMATCHES.md](MISMATCHES.md).
+  cases taken from the upstream test sources. See [MISMATCHES.md](https://github.com/Junsung-Kim/rust-jexl3/blob/main/MISMATCHES.md).
 
 [Unreleased]: https://github.com/Junsung-Kim/rust-jexl3/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/Junsung-Kim/rust-jexl3/releases/tag/v0.1.0
