@@ -7,6 +7,13 @@ behavior stays pinned to Apache Commons JEXL 3.2.1 throughout.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-01
+
+### Changed
+- The README shipped to crates.io links the crate on crates.io and docs.rs, and no longer says
+  the crate is unpublished.
+- Releases are published from GitHub Actions through crates.io Trusted Publishing.
+
 ## [0.1.0] - 2026-09-30
 
 First release: a port of Apache Commons JEXL 3.2.1.
@@ -28,5 +35,6 @@ First release: a port of Apache Commons JEXL 3.2.1.
   2,976 cases with no unexplained difference, plus lexer, parser, arithmetic, templates and 633
   cases taken from the upstream test sources. See [MISMATCHES.md](https://github.com/Junsung-Kim/rust-jexl3/blob/main/MISMATCHES.md).
 
-[Unreleased]: https://github.com/Junsung-Kim/rust-jexl3/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Junsung-Kim/rust-jexl3/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Junsung-Kim/rust-jexl3/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Junsung-Kim/rust-jexl3/releases/tag/v0.1.0
